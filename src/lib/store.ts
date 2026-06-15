@@ -15,6 +15,7 @@ import type {
 const BINDER_CACHE_KEY = "usign.binders.cache";
 const INBOX_BINDER_CACHE_KEY = "usign.binders.inbox.cache";
 const PARTICIPATED_BINDER_CACHE_KEY = "usign.binders.participated.cache";
+const CC_BINDER_CACHE_KEY = "usign.binders.cc.cache";
 const CONTACT_CACHE_KEY = "usign.contacts.cache";
 const BINDER_EVENT = "binders";
 const CONTACT_EVENT = "contacts";
@@ -244,7 +245,7 @@ async function mutatePublicBinder(path: string, body?: Record<string, unknown>) 
   return binder;
 }
 
-export async function markPublicSignerViewed(binderId: string, signerId: string, token: string
+export async function markPublicSignerViewed(binderId: string, signerId: string, token: string,
 ) {
   return mutatePublicBinder(
     `/public/binders/${binderId}/signers/${signerId}/view?token=${encodeURIComponent(token)}`,
@@ -311,6 +312,7 @@ export function useBinders() {
     const onAuthChange = () => {
       if (!hasStoredAuthToken()) {
         setBinders([]);
+        clearCache(CC_BINDER_CACHE_KEY);
         clearCache(BINDER_CACHE_KEY);
         clearCache(INBOX_BINDER_CACHE_KEY);
         clearCache(PARTICIPATED_BINDER_CACHE_KEY);
@@ -564,6 +566,10 @@ export function useInboxBinders() {
 
 export function useParticipatedBinders() {
   return useBinderCollection("/binders/participated", PARTICIPATED_BINDER_CACHE_KEY);
+}
+
+export function useCcBinders() {
+  return useBinderCollection("/binders/cc", CC_BINDER_CACHE_KEY);
 }
 
 export function usePublicBinder(binderId: string, signerId: string, token: string) {

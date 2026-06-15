@@ -96,7 +96,9 @@ function BinderDetail() {
   const session = getSession();
   const sessionEmail = session?.email.trim().toLowerCase() ?? null;
   const binder = binders.find((b) => b.id === id);
-  const editable = binder?.status === "draft";
+  const isOwner = binder?.isOwner ?? false;
+  const isCcRecipient = binder?.isCcRecipient ?? false;
+  const editable = binder?.status === "draft" && isOwner;
   const [tab, setTab] = useState<Tab>("general");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<null | "name" | "description" | "group">(null);
