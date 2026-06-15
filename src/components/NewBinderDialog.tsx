@@ -298,15 +298,15 @@ export function NewBinderDialog({
       name: name.trim(),
       description: description.trim() || undefined,
       group,
-      ownerName: getSession()?.name ?? "",
-      ownerEmail: getSession()?.email ?? "",
-      ownerInitials: getSession()?.initials ?? "",
       status: saveAsDraft ? ("draft" as const) : undefined,
       documents: documentPayloads,
       attachments,
       signers: normalizedSigners,
       ccRecipients: ccRecipients
-        .map((c) => ({ id: c.id, name: c.name?.trim() || undefined, email: c.email.trim() }))
+        .map((c) => ({
+          name: c.name?.trim() || undefined,
+          email: c.email.trim(),
+        }))
         .filter((c) => (saveAsDraft ? Boolean(c.email) : true)),
       signatureFields: normalizedFields,
       notifications: notif,

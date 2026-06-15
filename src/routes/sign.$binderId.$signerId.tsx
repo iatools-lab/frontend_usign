@@ -29,7 +29,15 @@ import { SignaturePad, type SignatureResult } from "@/components/SignaturePad";
 import { apiFetch, getApiBaseUrl, getErrorMessage } from "@/lib/api";
 import { getSession, logout } from "@/lib/auth";
 import { formatDateTime } from "@/lib/format";
-import { getSignerInvitation, useBinders, type BinderInvitation } from "@/lib/store";
+import {
+  declinePublicSigner,
+  getPublicBinder,
+  getSignerInvitation,
+  markPublicSignerViewed,
+  signPublicSigner,
+  useBinders,
+  type BinderInvitation,
+} from "@/lib/store";
 import { getMySignature, type SavedSignature } from "@/lib/mySignature";
 import { getInitialsFromName, type Binder, type SignatureField } from "@/lib/mockData";
 import { cn } from "@/lib/utils";
@@ -77,6 +85,14 @@ function SignPage() {
           setInvitation(nextInvitation);
         }
 
+        if (token) {
+          const nextBinder = await getPublicBinder(binderId, signerId, token);
+          if (active) {
+            setBinder(nextBinder);
+          }
+          return;
+        }
+
         if (!sessionEmail) {
           if (active) {
             setBinder(null);
@@ -106,13 +122,17 @@ function SignPage() {
     };
   }, [binderId, sessionEmail, signerId, token]);
   useEffect(() => {
-    if (binder && signer && signer.status !== "signed" && !signer.viewedAt) {
-      void markSignerViewed(binder.id, signer.id)
-        .then((nextBinder) => setBinder(nextBinder))
-        .catch(() => undefined);
+    if (!binder || !signer || signer.status === "signed" || signer.viewedAt) {
+      return;
     }
+
+    const markViewed = token
+      ? markPublicSignerViewed(binder.id, signer.id, token)
+      : markSignerViewed(binder.id, signer.id);
+
+    void markViewed.then((nextBinder) => setBinder(nextBinder)).catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [binder?.id, signer?.id]);
+  }, [binder?.id, signer?.id, signer?.status, signer?.viewedAt, token]);
 
   const redirectPath =
     invitation?.signPath ??
@@ -120,7 +140,10 @@ function SignPage() {
       ? `/sign/${binderId}/${signerId}?token=${encodeURIComponent(token)}`
       : `/sign/${binderId}/${signerId}`);
   const mustSwitchAccount = Boolean(
-    session && invitation && session.email.toLowerCase() !== invitation.signerEmail.toLowerCase(),
+    !token &&
+    session &&
+    invitation &&
+    session.email.toLowerCase() !== invitation.signerEmail.toLowerCase(),
   );
 
   const submitDecline = async () => {
@@ -131,7 +154,9 @@ function SignPage() {
       return;
     }
     try {
-      const nextBinder = await declineAs(binder.id, signer.id, reason);
+      const nextBinder = token
+        ? await declinePublicSigner(binder.id, signer.id, token, reason)
+        : await declineAs(binder.id, signer.id, reason);
       setBinder(nextBinder);
       setDeclined(true);
       setDeclineOpen(false);
@@ -169,12 +194,12 @@ function SignPage() {
     const headers: Record<string, string> = {};
 
     let url: string;
-    if (sessionEmail) {
+    if (token) {
+      url = `${baseUrl}/public/binders/${binderId}/signers/${signerId}/documents/${activeDocId}/content?token=${encodeURIComponent(token)}`;
+    } else if (sessionEmail) {
       url = `${baseUrl}/binders/${binderId}/documents/${activeDocId}/content`;
       const stored = typeof window !== "undefined" ? localStorage.getItem("usign.authToken") : null;
       if (stored) headers.Authorization = `Bearer ${stored}`;
-    } else if (token) {
-      url = `${baseUrl}/public/binders/${binderId}/signers/${signerId}/documents/${activeDocId}/content?token=${encodeURIComponent(token)}`;
     } else {
       return undefined;
     }
@@ -231,7 +256,7 @@ function SignPage() {
     );
   }
 
-  if (!session) {
+  if (!session && !token) {
     if (!invitation) {
       return (
         <PublicShell onToggleLang={toggleLang}>
@@ -394,11 +419,15 @@ function SignPage() {
     }
     setIsSigning(true);
     try {
-      const nextBinder = await signAs(binder.id, signer.id, {
+      const payload = {
         method: canonical.method,
         signatureData: canonical.data,
         fieldOverrides,
-      });
+      };
+
+      const nextBinder = token
+        ? await signPublicSigner(binder.id, signer.id, token, payload)
+        : await signAs(binder.id, signer.id, payload);
       setBinder(nextBinder);
       setDone(true);
     } catch (error) {

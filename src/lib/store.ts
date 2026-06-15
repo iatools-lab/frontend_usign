@@ -30,6 +30,7 @@ type CreateBinderInput = {
   documents?: (BinderDocument & { content?: string })[];
   attachments?: BinderAttachment[];
   signers?: BinderSigner[];
+  ccRecipients?: { email: string; name?: string }[];
   signatureFields?: SignatureField[];
   notifications?: BinderNotifications;
   consolidation?: boolean;
@@ -210,10 +211,13 @@ function emitStore(detail: string) {
   notifyStoreChange(detail);
 }
 
-export async function getPublicBinder(binderId: string, signerId: string) {
-  return apiFetch<Binder>(`/public/binders/${binderId}/signers/${signerId}`, {
-    skipAuth: true,
-  });
+export async function getPublicBinder(binderId: string, signerId: string, token: string) {
+  return apiFetch<Binder>(
+    `/public/binders/${binderId}/signers/${signerId}?token=${encodeURIComponent(token)}`,
+    {
+      skipAuth: true,
+    },
+  );
 }
 
 export async function getSignerInvitation(binderId: string, signerId: string, token: string) {
@@ -240,18 +244,35 @@ async function mutatePublicBinder(path: string, body?: Record<string, unknown>) 
   return binder;
 }
 
-export async function markPublicSignerViewed(binderId: string, signerId: string) {
-  return mutatePublicBinder(`/public/binders/${binderId}/signers/${signerId}/view`);
+export async function markPublicSignerViewed(binderId: string, signerId: string, token: string
+) {
+  return mutatePublicBinder(
+    `/public/binders/${binderId}/signers/${signerId}/view?token=${encodeURIComponent(token)}`,
+  );
 }
 
-export async function declinePublicSigner(binderId: string, signerId: string, reason: string) {
-  return mutatePublicBinder(`/public/binders/${binderId}/signers/${signerId}/decline`, {
-    reason,
-  });
+export async function declinePublicSigner(
+  binderId: string,
+  signerId: string,
+  token: string,
+  reason: string,
+) {
+  return mutatePublicBinder(
+    `/public/binders/${binderId}/signers/${signerId}/decline?token=${encodeURIComponent(token)}`,
+    { reason },
+  );
 }
 
-export async function signPublicSigner(binderId: string, signerId: string, payload: SignPayload) {
-  return mutatePublicBinder(`/public/binders/${binderId}/signers/${signerId}/sign`, payload);
+export async function signPublicSigner(
+  binderId: string,
+  signerId: string,
+  token: string,
+  payload: SignPayload,
+) {
+  return mutatePublicBinder(
+    `/public/binders/${binderId}/signers/${signerId}/sign?token=${encodeURIComponent(token)}`,
+    payload,
+  );
 }
 
 export function useBinders() {
@@ -310,6 +331,7 @@ export function useBinders() {
   }, []);
 
   const create = useCallback(async (data: CreateBinderInput) => {
+    console.log("CREATE BINDER PAYLOAD", data);
     const binder = await apiFetch<Binder>("/binders", {
       method: "POST",
       body: JSON.stringify({
@@ -320,6 +342,7 @@ export function useBinders() {
         documents: data.documents,
         attachments: data.attachments,
         signers: data.signers,
+        ccRecipients: data.ccRecipients,
         signatureFields: data.signatureFields,
         notifications: data.notifications,
         consolidation: data.consolidation,
@@ -543,15 +566,15 @@ export function useParticipatedBinders() {
   return useBinderCollection("/binders/participated", PARTICIPATED_BINDER_CACHE_KEY);
 }
 
-export function usePublicBinder(binderId: string, signerId: string) {
+export function usePublicBinder(binderId: string, signerId: string, token: string) {
   const [binder, setBinder] = useState<Binder | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const refresh = useCallback(async () => {
-    const next = await getPublicBinder(binderId, signerId);
+    const next = await getPublicBinder(binderId, signerId, token);
     setBinder(next);
     return next;
-  }, [binderId, signerId]);
+  }, [binderId, signerId, token]);
 
   useEffect(() => {
     let active = true;
@@ -559,7 +582,7 @@ export function usePublicBinder(binderId: string, signerId: string) {
     const load = async () => {
       setIsLoading(true);
       try {
-        const next = await getPublicBinder(binderId, signerId);
+        const next = await getPublicBinder(binderId, signerId, token);
         if (active) {
           setBinder(next);
         }
@@ -579,7 +602,7 @@ export function usePublicBinder(binderId: string, signerId: string) {
     return () => {
       active = false;
     };
-  }, [binderId, signerId]);
+  }, [binderId, signerId, token]);
 
   return { binder, isLoading, refresh };
 }
