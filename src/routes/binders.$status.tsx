@@ -6,7 +6,7 @@ import { z } from "zod";
 import { AppShell } from "@/components/AppShell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { NewBinderDialog } from "@/components/NewBinderDialog";
-import { useBinders } from "@/lib/store";
+import { useBinders, useCcBinders } from "@/lib/store";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format";
@@ -31,7 +31,23 @@ function BindersByStatus() {
   const { status } = Route.useParams();
   const { draftId } = Route.useSearch();
   const { t, i18n } = useTranslation();
-  const { binders, remove } = useBinders();
+  const { binders: ownedBinders, remove } = useBinders();
+  const { binders: ccBinders } = useCcBinders();
+
+  const binders = useMemo(() => {
+    const map = new Map<string, Binder>();
+
+    for (const binder of ownedBinders) {
+      map.set(binder.id, binder);
+    }
+
+    for (const binder of ccBinders) {
+      map.set(binder.id, binder);
+    }
+
+    return Array.from(map.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }, [ownedBinders, ccBinders]);
+
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -221,13 +237,15 @@ function BindersByStatus() {
                         >
                           <ExternalLink className="h-4 w-4" />
                         </button>
-                        <button
-                          onClick={() => remove(b.id)}
-                          className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                          aria-label="Delete"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {b.isOwner && (
+                          <button
+                            onClick={() => remove(b.id)}
+                            className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            aria-label="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
