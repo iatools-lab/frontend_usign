@@ -33,7 +33,7 @@ import {
 import { AppShell } from "@/components/AppShell";
 import { DocumentPagePreview } from "@/components/DocumentPagePreview";
 import { StatusBadge } from "@/components/StatusBadge";
-import { useBinders } from "@/lib/store";
+import { useBinders, useCcBinders } from "@/lib/store";
 import { getApiBaseUrl, getErrorMessage, getStoredAuthToken } from "@/lib/api";
 import { isAllowedSignerEmail } from "@/lib/email";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -86,12 +86,18 @@ function BinderDetail() {
   const { id } = Route.useParams();
   const { t, i18n } = useTranslation();
   const {
-    binders,
+    binders: ownedBinders,
     update,
     startBinder: startBinderAction,
     recordDownload,
     updateSignerInvitationEmail,
   } = useBinders();
+
+  const { binders: ccBinders } = useCcBinders();
+
+  const binders = [...ownedBinders, ...ccBinders].filter(
+    (binder, index, self) => index === self.findIndex((b) => b.id === binder.id),
+  );
   const navigate = useNavigate();
   const session = getSession();
   const sessionEmail = session?.email.trim().toLowerCase() ?? null;
