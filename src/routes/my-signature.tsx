@@ -11,6 +11,7 @@ import { getErrorMessage } from "@/lib/api";
 import { type SavedSignatureMethod, useMySignature } from "@/lib/mySignature";
 import { formatDateTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { cleanSignatureImageFile } from "@/lib/signatureImage";
 
 export const Route = createFileRoute("/my-signature")({
   head: () => ({
@@ -107,11 +108,15 @@ function MySignaturePage() {
     setHasDrawn(false);
   };
 
-  const onPickImage = (file: File | null) => {
+  const onPickImage = async (file: File | null) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setImageData(String(reader.result));
-    reader.readAsDataURL(file);
+
+    try {
+      const cleanedImage = await cleanSignatureImageFile(file);
+      setImageData(cleanedImage);
+    } catch {
+      setImageData(null);
+    }
   };
 
   const canSave = (() => {

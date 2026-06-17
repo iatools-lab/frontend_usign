@@ -4,6 +4,7 @@ import { Pen, Type, Image as ImageIcon, KeyRound, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { cleanSignatureImageFile } from "@/lib/signatureImage";
 
 export type SignatureMethod = "drawn" | "typed" | "image" | "otp";
 
@@ -96,11 +97,15 @@ export function SignaturePad({
     setHasDrawn(false);
   };
 
-  const onPickImage = (file: File | null) => {
+  const onPickImage = async (file: File | null) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setImageData(String(reader.result));
-    reader.readAsDataURL(file);
+
+    try {
+      const cleanedImage = await cleanSignatureImageFile(file);
+      setImageData(cleanedImage);
+    } catch {
+      setImageData(null);
+    }
   };
 
   const canConfirm = (() => {
