@@ -89,6 +89,7 @@ function BinderDetail() {
     binders: ownedBinders,
     update,
     startBinder: startBinderAction,
+    remindBinder,
     recordDownload,
     updateSignerInvitationEmail,
   } = useBinders();
@@ -123,6 +124,7 @@ function BinderDetail() {
   const [draftSignatureFields, setDraftSignatureFields] = useState<SignatureField[]>([]);
   const [signatureFieldsDirty, setSignatureFieldsDirty] = useState(false);
   const [isSavingSignatureFields, setIsSavingSignatureFields] = useState(false);
+  const [isRelaunching, setIsRelaunching] = useState(false);
   const [draftDocumentFiles, setDraftDocumentFiles] = useState<Record<string, File>>({});
   const [documentPageCounts, setDocumentPageCounts] = useState<Record<string, number>>({});
   const docInputRef = useRef<HTMLInputElement>(null);
@@ -137,10 +139,6 @@ function BinderDetail() {
   }, [binder]);
 
   useEffect(() => {
-    if (!binder) {
-      return;
-    }
-
     setDraftDocumentFiles({});
     setDocumentPageCounts({});
     setPlacementPage(1);
@@ -184,7 +182,12 @@ function BinderDetail() {
   }, [binder?.signers, placementSignerId]);
 
   useEffect(() => {
-    if (!binder || !editable || !placementDocId || draftDocumentFiles[placementDocId]) {
+    if (
+      !binder ||
+      (!editable && !isOwner) ||
+      !placementDocId ||
+      draftDocumentFiles[placementDocId]
+    ) {
       return;
     }
 
@@ -243,7 +246,7 @@ function BinderDetail() {
     return () => {
       cancelled = true;
     };
-  }, [binder, editable, placementDocId, draftDocumentFiles]);
+  }, [binder, editable, isOwner, placementDocId, draftDocumentFiles]);
 
   useEffect(() => {
     if (!binder || !placementDocId) {
@@ -295,6 +298,16 @@ function BinderDetail() {
       )
     : [];
   const displayedSignatureFields = editable ? draftSignatureFields : (binder.signatureFields ?? []);
+  const activePreviewFields = activePlacementDocument
+    ? displayedSignatureFields.filter(
+        (field) => field.documentId === activePlacementDocument.id && field.page === placementPage,
+      )
+    : [];
+  const canInspectSignatures =
+    isOwner &&
+    !editable &&
+    (binder.status === "started" || binder.status === "finished") &&
+    documents.length > 0;
 
   const TABS: { key: Tab; label: string }[] = [
     { key: "general", label: t("detail.tabs.general") },
@@ -650,6 +663,20 @@ function BinderDetail() {
     startBinderAction(binder.id);
   };
 
+  const relaunchBinder = async () => {
+    if (!isOwner || binder.status !== "started" || isRelaunching) return;
+
+    setIsRelaunching(true);
+    try {
+      await remindBinder(binder.id);
+      toast.success(t("detail.relaunchSuccess"));
+    } catch (error) {
+      toast.error(getErrorMessage(error, t("detail.relaunchError")));
+    } finally {
+      setIsRelaunching(false);
+    }
+  };
+
   const onDownloadSigned = () => {
     void generateSignedPdf(binder, i18n.language)
       .then(() =>
@@ -731,7 +758,19 @@ function BinderDetail() {
             ) : (
               <>
                 <Lock className="h-4 w-4" />
-                <span>{t("detail.lockedHint")}</span>
+                <span className="flex-1">{t("detail.lockedHint")}</span>
+                {isOwner && binder.status === "started" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={relaunchBinder}
+                    disabled={isRelaunching}
+                    className="gap-1.5"
+                  >
+                    <BellRing className="h-3.5 w-3.5" />
+                    {isRelaunching ? t("detail.relaunchingBinder") : t("detail.relaunchBinder")}
+                  </Button>
+                )}
               </>
             )}
           </div>
@@ -1364,6 +1403,125 @@ function BinderDetail() {
             </Section>
           )}
 
+          {tab === "documents" && canInspectSignatures && (
+            <Section title={t("detail.signatureTrackingTitle")}>
+              <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
+                <div className="space-y-4">
+                  <div className="rounded-lg border bg-muted/20 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      {t("detail.documentsTitle")}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {documents.map((document) => {
+                        const isActive = document.id === activePlacementDocument?.id;
+                        return (
+                          <button
+                            key={document.id}
+                            onClick={() => {
+                              setPlacementDocId(document.id);
+                              setPlacementPage(1);
+                            }}
+                            className={cn(
+                              "rounded-full border px-3 py-1.5 text-left text-sm transition",
+                              isActive
+                                ? "border-action bg-action/10 text-action"
+                                : "border-border bg-background text-foreground hover:bg-accent",
+                            )}
+                          >
+                            {document.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border bg-muted/20 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          {t("newBinder.page")}
+                        </div>
+                        <div className="mt-1 text-sm font-medium text-foreground">
+                          {placementPage} / {activePlacementPageCount}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setPlacementPage((current) => Math.max(1, current - 1))}
+                          disabled={placementPage <= 1}
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            setPlacementPage((current) =>
+                              Math.min(activePlacementPageCount, current + 1),
+                            )
+                          }
+                          disabled={placementPage >= activePlacementPageCount}
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="mt-3 rounded-md border bg-background px-3 py-2 text-xs text-muted-foreground">
+                      {t("newBinder.zonesCount", { count: activePreviewFields.length })}
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-action/20 bg-action/5 p-4 text-sm text-foreground">
+                    {t("detail.signatureTrackingHelp")}
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {activePlacementDocument && (
+                    <DocumentPagePreview
+                      documentName={activePlacementDocument.name}
+                      page={placementPage}
+                      totalPages={activePlacementPageCount}
+                      documentFile={activePlacementFile}
+                      className="mx-auto w-full max-w-3xl"
+                      onTotalPagesChange={(pages) => {
+                        setDocumentPageCounts((current) =>
+                          current[activePlacementDocument.id] === pages
+                            ? current
+                            : { ...current, [activePlacementDocument.id]: pages },
+                        );
+                      }}
+                    >
+                      {activePreviewFields.map((field, index) => {
+                        const signer = signers.find((item) => item.id === field.signerId);
+                        const color = signer?.color ?? SIGNER_COLORS[index % SIGNER_COLORS.length];
+
+                        return (
+                          <ReadOnlySignatureField
+                            key={field.id}
+                            field={field}
+                            signer={signer}
+                            color={color}
+                            lang={i18n.language}
+                            signedLabel={t("detail.signed")}
+                            pendingLabel={t("detail.pending")}
+                            fallbackLabel={t(
+                              field.kind === "initial"
+                                ? "newBinder.kind.initial"
+                                : "newBinder.kind.signature",
+                            )}
+                          />
+                        );
+                      })}
+                    </DocumentPagePreview>
+                  )}
+                </div>
+              </div>
+            </Section>
+          )}
+
           {(tab === "notifications" || tab === "general") && (
             <Section title={t("detail.tabs.notifications")}>
               <div className="flex items-center gap-3 py-2">
@@ -1548,6 +1706,87 @@ function InlineEditor({
       >
         <X className="h-3.5 w-3.5" />
       </button>
+    </div>
+  );
+}
+
+function ReadOnlySignatureField({
+  field,
+  signer,
+  color,
+  lang,
+  signedLabel,
+  pendingLabel,
+  fallbackLabel,
+}: {
+  field: SignatureField;
+  signer?: BinderSigner;
+  color: string;
+  lang: string;
+  signedLabel: string;
+  pendingLabel: string;
+  fallbackLabel: string;
+}) {
+  const value = field.signatureData ?? signer?.signatureData;
+  const signedAt = field.signedAt ?? signer?.signedAt;
+  const isSigned = Boolean(value || signedAt || signer?.status === "signed");
+  const displaysImage = Boolean(value?.startsWith("data:image/"));
+  const isInitial = field.kind === "initial";
+
+  return (
+    <div
+      className={cn(
+        "pointer-events-none absolute overflow-hidden rounded border-2 p-1 text-[10px] shadow-sm",
+        isSigned ? "bg-white" : "border-dashed bg-white/75 opacity-70",
+      )}
+      style={{
+        left: `${field.x * 100}%`,
+        top: `${field.y * 100}%`,
+        width: `${field.width * 100}%`,
+        height: `${field.height * 100}%`,
+        borderColor: color,
+        color,
+      }}
+    >
+      {isSigned && value ? (
+        isInitial ? (
+          <div className="flex h-full items-center justify-center">
+            <span className="font-bold tracking-widest text-slate-900">{value}</span>
+          </div>
+        ) : (
+          <div className="flex h-full flex-col justify-between text-left normal-case text-slate-900">
+            <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
+              {displaysImage ? (
+                <img src={value} alt="" className="max-h-full max-w-full object-contain" />
+              ) : (
+                <span
+                  className="max-w-full truncate px-1"
+                  style={{
+                    fontFamily:
+                      signer?.signatureMethod === "typed"
+                        ? '"Brush Script MT", "Snell Roundhand", cursive'
+                        : undefined,
+                    fontSize: "13px",
+                  }}
+                >
+                  {value}
+                </span>
+              )}
+            </div>
+            <div className="border-t border-slate-200/80 px-1 pt-1 text-[8px] leading-tight text-slate-700">
+              <div className="truncate font-semibold">{signer?.name ?? signedLabel}</div>
+              {signedAt && <div className="truncate">{formatDateTime(signedAt, lang)}</div>}
+            </div>
+          </div>
+        )
+      ) : (
+        <div className="flex h-full flex-col items-center justify-center text-center font-semibold uppercase">
+          <span>{isSigned ? signedLabel : pendingLabel}</span>
+          <span className="mt-0.5 max-w-full truncate normal-case">
+            {signer?.name ?? fallbackLabel}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

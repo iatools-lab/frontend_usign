@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
@@ -25,6 +26,11 @@ import { Route as BindersStatusRouteImport } from './routes/binders.$status'
 import { Route as SignBinderIdSignerIdRouteImport } from './routes/sign.$binderId.$signerId'
 import { Route as BindersDetailIdRouteImport } from './routes/binders.detail.$id'
 
+const VerifyEmailRoute = VerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/binders/$status': typeof BindersStatusRoute
   '/binders/': typeof BindersIndexRoute
   '/binders/detail/$id': typeof BindersDetailIdRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/binders/$status': typeof BindersStatusRoute
   '/binders': typeof BindersIndexRoute
   '/binders/detail/$id': typeof BindersDetailIdRoute
@@ -148,6 +156,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
+  '/verify-email': typeof VerifyEmailRoute
   '/binders/$status': typeof BindersStatusRoute
   '/binders/': typeof BindersIndexRoute
   '/binders/detail/$id': typeof BindersDetailIdRoute
@@ -167,6 +176,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/settings'
     | '/signup'
+    | '/verify-email'
     | '/binders/$status'
     | '/binders/'
     | '/binders/detail/$id'
@@ -184,6 +194,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/settings'
     | '/signup'
+    | '/verify-email'
     | '/binders/$status'
     | '/binders'
     | '/binders/detail/$id'
@@ -201,6 +212,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/settings'
     | '/signup'
+    | '/verify-email'
     | '/binders/$status'
     | '/binders/'
     | '/binders/detail/$id'
@@ -219,6 +231,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
   SignupRoute: typeof SignupRoute
+  VerifyEmailRoute: typeof VerifyEmailRoute
   BindersStatusRoute: typeof BindersStatusRoute
   BindersIndexRoute: typeof BindersIndexRoute
   BindersDetailIdRoute: typeof BindersDetailIdRoute
@@ -227,6 +240,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/verify-email': {
+      id: '/verify-email'
+      path: '/verify-email'
+      fullPath: '/verify-email'
+      preLoaderRoute: typeof VerifyEmailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/signup': {
       id: '/signup'
       path: '/signup'
@@ -347,6 +367,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
   SignupRoute: SignupRoute,
+  VerifyEmailRoute: VerifyEmailRoute,
   BindersStatusRoute: BindersStatusRoute,
   BindersIndexRoute: BindersIndexRoute,
   BindersDetailIdRoute: BindersDetailIdRoute,

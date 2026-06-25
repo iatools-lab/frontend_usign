@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/Logo";
 import { getSession, login, loginWithGoogle } from "@/lib/auth";
-import { getErrorMessage } from "@/lib/api";
+import { getErrorMessage, isApiError } from "@/lib/api";
 
 const searchSchema = z.object({
   redirect: z.string().optional(),
@@ -63,6 +63,17 @@ function LoginPage() {
       await login(email.trim(), password);
       redirectAfterAuth();
     } catch (error) {
+      if (
+        isApiError(error) &&
+        error.status === 403 &&
+        error.payload &&
+        typeof error.payload === "object" &&
+        "code" in error.payload &&
+        error.payload.code === "EMAIL_NOT_VERIFIED"
+      ) {
+        navigate({ to: "/verify-email", search: { email: email.trim(), redirect } });
+        return;
+      }
       toast.error(getErrorMessage(error, "Connexion impossible"));
     } finally {
       setIsSubmitting(false);

@@ -162,4 +162,4 @@ export const SIGNER_COLORS = [
   "#EC4899",
   "#14B8A6",
   "#F97316",
-]
+];

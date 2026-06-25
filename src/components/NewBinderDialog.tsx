@@ -298,7 +298,7 @@ export function NewBinderDialog({
       name: name.trim(),
       description: description.trim() || undefined,
       group,
-      status: saveAsDraft ? ("draft" as const) : undefined,
+      status: saveAsDraft ? ("draft" as const) : ("started" as const),
       documents: documentPayloads,
       attachments,
       signers: normalizedSigners,
@@ -315,6 +315,10 @@ export function NewBinderDialog({
   };
 
   const saveDraftIfNeeded = async () => {
+    if (!draftBinder) {
+      return "skipped" as const;
+    }
+
     if (!hasDraftContent || !name.trim()) {
       return "skipped" as const;
     }
@@ -323,8 +327,6 @@ export function NewBinderDialog({
     try {
       if (draftBinder) {
         await update(draftBinder.id, await buildPayload(true));
-      } else {
-        await create(await buildPayload(true));
       }
       toast.success("Brouillon enregistre");
       return "saved" as const;
@@ -362,14 +364,18 @@ export function NewBinderDialog({
 
   const canNext = useMemo(() => {
     if (step === "general") return name.trim().length > 0;
+    if (step === "documents") return documents.length > 0;
     if (step === "signers")
       return (
         signers.length > 0 &&
         signers.every((s) => s.name.trim() && s.email.trim() && isAllowedSignerEmail(s.email))
       );
-    if (step === "placement") return true; // optional
+    if (step === "placement") {
+      const coveredSignerIds = new Set(fields.map((field) => field.signerId));
+      return signers.every((signer) => coveredSignerIds.has(signer.id));
+    }
     return true;
-  }, [step, name, signers]);
+  }, [step, name, documents.length, signers, fields]);
 
   const goNext = async () => {
     if (!canNext || isBusy) return;
@@ -400,8 +406,8 @@ export function NewBinderDialog({
         const startedBinder = await startBinder(savedBinder.id);
         binderId = startedBinder.id;
       } else {
-        const binder = await create(await buildPayload(false));
-        binderId = binder.id;
+        const createdBinder = await create(await buildPayload(false));
+        binderId = createdBinder.id;
       }
 
       // Persist any new signer names into contacts (non-blocking failures)
@@ -445,11 +451,13 @@ export function NewBinderDialog({
     if (!files) return;
     const picked = Array.from(files);
     const accepted = picked.filter(
-      (file) => file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"),
+      (file) =>
+        file.size <= 15 * 1024 * 1024 &&
+        (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")),
     );
 
     if (accepted.length !== picked.length) {
-      toast.error("Seuls les fichiers PDF peuvent etre ajoutes comme documents a signer.");
+      toast.error("Seuls les PDF de 15 Mo maximum peuvent être ajoutés.");
     }
 
     if (accepted.length === 0) {

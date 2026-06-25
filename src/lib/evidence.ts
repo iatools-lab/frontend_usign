@@ -17,7 +17,7 @@ type PdfjsModule = typeof import("pdfjs-dist");
 
 let pdfjsPromise: Promise<PdfjsModule> | null = null;
 const SIGNED_PDF_RENDER_SCALE = 1.5;
-const sourceDocumentBytesCache = new Map<string, Promise<Uint8Array>>();
+const sourceDocumentBytesCache = new Map<string, Promise<ArrayBuffer>>();
 
 const KIND_LABEL_FR: Record<string, string> = {
   "binder.created": "Parapheur créé",
@@ -143,14 +143,15 @@ async function fetchSourceDocumentBytes(binderId: string, documentId: string) {
     throw new Error("Impossible de récupérer le document source du parapheur.");
   }
 
-  return new Uint8Array(await response.arrayBuffer());
+  return response.arrayBuffer();
 }
 
-function loadSourceDocumentBytes(binderId: string, documentId: string) {
+async function loadSourceDocumentBytes(binderId: string, documentId: string) {
   const cacheKey = `${binderId}:${documentId}`;
   const cached = sourceDocumentBytesCache.get(cacheKey);
   if (cached) {
-    return cached;
+    const buffer = await cached;
+    return new Uint8Array(buffer.slice(0));
   }
 
   const pending = fetchSourceDocumentBytes(binderId, documentId).catch((error) => {
@@ -159,7 +160,8 @@ function loadSourceDocumentBytes(binderId: string, documentId: string) {
   });
 
   sourceDocumentBytesCache.set(cacheKey, pending);
-  return pending;
+  const buffer = await pending;
+  return new Uint8Array(buffer.slice(0));
 }
 
 function getImageFormat(data: string): "PNG" | "JPEG" {

@@ -67,7 +67,8 @@ export function DocumentPagePreview({
 
       try {
         const { getDocument } = await loadPdfjs();
-        const data = new Uint8Array(await documentFile.arrayBuffer());
+        const buffer = await documentFile.arrayBuffer();
+        const data = new Uint8Array(buffer.slice(0));
         const loadingTask = getDocument({ data });
         const pdf = await loadingTask.promise;
 

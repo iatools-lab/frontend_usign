@@ -31,6 +31,11 @@ type SessionResponse = {
   session: Session;
 };
 
+export type SignupResponse = {
+  verificationRequired: true;
+  email: string;
+};
+
 type BasicOkResponse = {
   ok: boolean;
 };
@@ -139,8 +144,9 @@ export async function signup(
   email: string,
   password: string,
   confirmPassword: string,
+  redirect?: string,
 ) {
-  const response = await apiFetch<SessionResponse>("/auth/signup", {
+  return apiFetch<SignupResponse>("/auth/signup", {
     method: "POST",
     skipAuth: true,
     body: JSON.stringify({
@@ -148,10 +154,29 @@ export async function signup(
       email: email.trim(),
       password,
       confirmPassword,
+      redirect: redirect?.startsWith("/") ? redirect : undefined,
     }),
   });
+}
 
+export async function verifyEmail(token: string) {
+  const response = await apiFetch<SessionResponse>("/auth/verify-email", {
+    method: "POST",
+    skipAuth: true,
+    body: JSON.stringify({ token }),
+  });
   return persistSession(response.session);
+}
+
+export async function resendEmailVerification(email: string, redirect?: string) {
+  return apiFetch<BasicOkResponse>("/auth/resend-email-verification", {
+    method: "POST",
+    skipAuth: true,
+    body: JSON.stringify({
+      email: email.trim(),
+      redirect: redirect?.startsWith("/") ? redirect : undefined,
+    }),
+  });
 }
 
 export async function forgotPassword(email: string) {

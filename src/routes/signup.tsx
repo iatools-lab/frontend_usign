@@ -67,8 +67,11 @@ function SignupPage() {
 
     setIsSubmitting(true);
     try {
-      await signup(name.trim(), email.trim(), password, confirmPassword);
-      redirectAfterAuth();
+      const response = await signup(name.trim(), email.trim(), password, confirmPassword, redirect);
+      navigate({
+        to: "/verify-email",
+        search: { email: response.email, redirect },
+      });
     } catch (error) {
       toast.error(getErrorMessage(error, "Création du compte impossible"));
     } finally {

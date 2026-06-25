@@ -65,6 +65,7 @@ function SignPage() {
   const [binder, setBinder] = useState<Binder | null>(null);
   const [invitation, setInvitation] = useState<BinderInvitation | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const signer = binder?.signers?.find((s) => s.id === signerId);
   const [declineOpen, setDeclineOpen] = useState(false);
   const [declineReason, setDeclineReason] = useState("");
@@ -76,6 +77,7 @@ function SignPage() {
 
     const load = async () => {
       setIsLoading(true);
+      setLoadError(null);
       try {
         const nextInvitation = token
           ? await getSignerInvitation(binderId, signerId, token).catch(() => null)
@@ -104,9 +106,10 @@ function SignPage() {
         if (active) {
           setBinder(nextBinder);
         }
-      } catch {
+      } catch (error) {
         if (active) {
           setBinder(null);
+          setLoadError(getErrorMessage(error, "Impossible d'ouvrir cette invitation."));
         }
       } finally {
         if (active) {
@@ -261,7 +264,7 @@ function SignPage() {
       return (
         <PublicShell onToggleLang={toggleLang}>
           <div className="rounded-lg border bg-card p-10 text-center">
-            <p className="text-sm text-muted-foreground">{t("sign.notFound")}</p>
+            <p className="text-sm text-muted-foreground">{loadError ?? t("sign.notFound")}</p>
           </div>
         </PublicShell>
       );
@@ -335,7 +338,7 @@ function SignPage() {
     return (
       <PublicShell onToggleLang={toggleLang}>
         <div className="rounded-lg border bg-card p-10 text-center">
-          <p className="text-sm text-muted-foreground">{t("sign.notFound")}</p>
+          <p className="text-sm text-muted-foreground">{loadError ?? t("sign.notFound")}</p>
         </div>
       </PublicShell>
     );

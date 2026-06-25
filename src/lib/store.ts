@@ -25,9 +25,6 @@ type CreateBinderInput = {
   description?: string;
   group?: string;
   status?: BinderStatus;
-  ownerName: string;
-  ownerEmail: string;
-  ownerInitials: string;
   documents?: (BinderDocument & { content?: string })[];
   attachments?: BinderAttachment[];
   signers?: BinderSigner[];
@@ -35,6 +32,10 @@ type CreateBinderInput = {
   signatureFields?: SignatureField[];
   notifications?: BinderNotifications;
   consolidation?: boolean;
+};
+
+type UpdateBinderInput = Partial<Omit<Binder, "ccRecipients">> & {
+  ccRecipients?: { id?: string; email: string; name?: string }[];
 };
 
 type SignPayload = {
@@ -245,8 +246,7 @@ async function mutatePublicBinder(path: string, body?: Record<string, unknown>) 
   return binder;
 }
 
-export async function markPublicSignerViewed(binderId: string, signerId: string, token: string,
-) {
+export async function markPublicSignerViewed(binderId: string, signerId: string, token: string) {
   return mutatePublicBinder(
     `/public/binders/${binderId}/signers/${signerId}/view?token=${encodeURIComponent(token)}`,
   );
@@ -364,7 +364,7 @@ export function useBinders() {
     emitStore(BINDER_EVENT);
   }, []);
 
-  const update = useCallback(async (id: string, patch: Partial<Binder>) => {
+  const update = useCallback(async (id: string, patch: UpdateBinderInput) => {
     const binder = await apiFetch<Binder>(`/binders/${id}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
@@ -434,6 +434,18 @@ export function useBinders() {
     [],
   );
 
+  const remindBinder = useCallback(async (binderId: string) => {
+    const binder = await apiFetch<Binder>(`/binders/${binderId}/remind`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+
+    const next = replaceBinderCache(binder);
+    setBinders(next);
+    emitStore(BINDER_EVENT);
+    return binder;
+  }, []);
+
   const updateSignerInvitationEmail = useCallback(
     async (binderId: string, signerId: string, email: string) => {
       const binder = await apiFetch<Binder>(`/binders/${binderId}/signers/${signerId}/invitation`, {
@@ -491,6 +503,7 @@ export function useBinders() {
     markSignerViewed,
     declineAs,
     remindSigner,
+    remindBinder,
     updateSignerInvitationEmail,
     appendEvent,
     recordDownload,
