@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch, hasStoredAuthToken, notifyStoreChange } from "./api";
+import { dbGet, dbSet, dbClear, STORES } from "./db";
 import type {
   AuditEvent,
   Binder,
@@ -12,13 +13,29 @@ import type {
   SignatureField,
 } from "./mockData";
 
-const BINDER_CACHE_KEY = "usign.binders.cache";
-const INBOX_BINDER_CACHE_KEY = "usign.binders.inbox.cache";
-const PARTICIPATED_BINDER_CACHE_KEY = "usign.binders.participated.cache";
-const CC_BINDER_CACHE_KEY = "usign.binders.cc.cache";
-const CONTACT_CACHE_KEY = "usign.contacts.cache";
+/**
+ * Gardés uniquement pour la compatibilité avec la déconnexion
+ * (clearCachedCollections dans auth.ts supprime ces clés localStorage).
+ * Les binders sont désormais dans IndexedDB, mais on garde ces clés
+ * pour nettoyer les éventuelles données résiduelles lors de la déconnexion.
+ */
+export const BINDER_CACHE_KEY = "usign.binders.cache";
+export const CONTACT_CACHE_KEY = "usign.contacts.cache";
+
 const BINDER_EVENT = "binders";
 const CONTACT_EVENT = "contacts";
+
+const DB_KEY_BINDERS = "binders";
+const DB_KEY_INBOX = "inbox";
+const DB_KEY_PARTICIPATED = "participated";
+const DB_KEY_CC = "cc";
+const DB_KEY_CONTACTS = "contacts";
+
+/**
+ * Migration localStorage -> IndexedDB :
+ * Les binders sont stockés dans IndexedDB (pas de limite de 5 MB).
+ * Les contacts et la session restent en localStorage (petites donnees).
+ */
 
 type CreateBinderInput = {
   name: string;
@@ -62,6 +79,8 @@ export type BinderInvitation = {
 
 type CachedBinder = Partial<Binder> & Pick<Binder, "id" | "name" | "status" | "createdAt">;
 
+// ── Fonctions localStorage (gardées pour contacts et compatibilité) ──
+
 function readCache<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   const raw = localStorage.getItem(key);
@@ -83,6 +102,23 @@ function clearCache(key: string) {
   if (typeof window === "undefined") return;
   localStorage.removeItem(key);
 }
+
+// ── Fonctions IndexedDB (pour les binders, grosses données) ──
+
+async function dbReadBinderCache(dbKey: string): Promise<Binder[]> {
+  const data = await dbGet<unknown[]>(STORES.BINDERS as never, dbKey, []);
+  return data.filter(isCachedBinder).map(normalizeBinderRecord);
+}
+
+async function dbWriteBinderCache(dbKey: string, binders: Binder[]) {
+  await dbSet(STORES.BINDERS as never, dbKey, binders);
+}
+
+async function dbClearStore(storeName: string) {
+  await dbClear(storeName as never);
+}
+
+// ── Fonctions partagées ──
 
 function isCachedBinder(value: unknown): value is CachedBinder {
   if (!value || typeof value !== "object") {
@@ -106,10 +142,6 @@ function normalizeBinderRecord<T extends CachedBinder>(binder: T): Binder {
         ? binder.updatedAt
         : binder.createdAt,
   } as Binder;
-}
-
-function readBinderCache(key: string) {
-  return readCache<unknown[]>(key, []).filter(isCachedBinder).map(normalizeBinderRecord);
 }
 
 function getBinderSortKey(binder: Pick<Partial<Binder>, "updatedAt" | "createdAt">) {
@@ -138,20 +170,22 @@ function sortContacts(items: Contact[]) {
   });
 }
 
-function replaceBinderCache(nextBinder: Binder) {
-  const current = readBinderCache(BINDER_CACHE_KEY);
+async function replaceBinderCache(nextBinder: Binder) {
+  // Lire depuis IndexedDB
+  const current = await dbReadBinderCache(DB_KEY_BINDERS);
   const safeNextBinder = normalizeBinderRecord(nextBinder);
   const next = sortBinders([
     safeNextBinder,
     ...current.filter((binder) => binder.id !== safeNextBinder.id),
   ]);
-  writeCache(BINDER_CACHE_KEY, next);
+  await dbWriteBinderCache(DB_KEY_BINDERS, next);
   return next;
 }
 
-function removeBinderFromCache(id: string) {
-  const next = readBinderCache(BINDER_CACHE_KEY).filter((binder) => binder.id !== id);
-  writeCache(BINDER_CACHE_KEY, next);
+async function removeBinderFromCache(id: string) {
+  const current = await dbReadBinderCache(DB_KEY_BINDERS);
+  const next = current.filter((binder) => binder.id !== id);
+  await dbWriteBinderCache(DB_KEY_BINDERS, next);
   return next;
 }
 
@@ -173,27 +207,27 @@ function removeContactFromCache(id: string) {
 
 async function fetchBinders() {
   if (!hasStoredAuthToken()) {
-    clearCache(BINDER_CACHE_KEY);
-    clearCache(INBOX_BINDER_CACHE_KEY);
-    clearCache(PARTICIPATED_BINDER_CACHE_KEY);
+    await dbClearStore(STORES.BINDERS);
+    await dbClearStore(STORES.INBOX_BINDERS);
+    await dbClearStore(STORES.PARTICIPATED_BINDERS);
     return [] as Binder[];
   }
 
   const binders = await apiFetch<Binder[]>("/binders");
   const next = sortBinders(binders.map(normalizeBinderRecord));
-  writeCache(BINDER_CACHE_KEY, next);
+  await dbWriteBinderCache(DB_KEY_BINDERS, next);
   return next;
 }
 
-async function fetchScopedBinders(path: string, cacheKey: string) {
+async function fetchScopedBinders(path: string, dbKey: string) {
   if (!hasStoredAuthToken()) {
-    clearCache(cacheKey);
+    await dbWriteBinderCache(dbKey, []);
     return [] as Binder[];
   }
 
   const binders = await apiFetch<Binder[]>(path);
   const next = sortBinders(binders.map(normalizeBinderRecord));
-  writeCache(cacheKey, next);
+  await dbWriteBinderCache(dbKey, next);
   return next;
 }
 
@@ -239,7 +273,7 @@ async function mutatePublicBinder(path: string, body?: Record<string, unknown>) 
   });
 
   if (hasStoredAuthToken()) {
-    replaceBinderCache(binder);
+    await replaceBinderCache(binder);
     emitStore(BINDER_EVENT);
   }
 
@@ -283,8 +317,10 @@ export function useBinders() {
     let active = true;
 
     if (hasStoredAuthToken()) {
-      const cached = readBinderCache(BINDER_CACHE_KEY);
-      if (cached.length) setBinders(cached);
+      // Charger depuis IndexedDB (asynchrone)
+      void dbReadBinderCache(DB_KEY_BINDERS).then((cached) => {
+        if (active && cached.length) setBinders(cached);
+      });
     }
 
     const sync = async () => {
@@ -312,10 +348,10 @@ export function useBinders() {
     const onAuthChange = () => {
       if (!hasStoredAuthToken()) {
         setBinders([]);
-        clearCache(CC_BINDER_CACHE_KEY);
-        clearCache(BINDER_CACHE_KEY);
-        clearCache(INBOX_BINDER_CACHE_KEY);
-        clearCache(PARTICIPATED_BINDER_CACHE_KEY);
+        void dbClearStore(STORES.CC_BINDERS);
+        void dbClearStore(STORES.BINDERS);
+        void dbClearStore(STORES.INBOX_BINDERS);
+        void dbClearStore(STORES.PARTICIPATED_BINDERS);
         return;
       }
 
@@ -351,7 +387,7 @@ export function useBinders() {
       }),
     });
 
-    const next = replaceBinderCache(binder);
+    const next = await replaceBinderCache(binder);
     setBinders(next);
     emitStore(BINDER_EVENT);
     return binder;
@@ -359,7 +395,7 @@ export function useBinders() {
 
   const remove = useCallback(async (id: string) => {
     await apiFetch<{ ok: boolean }>(`/binders/${id}`, { method: "DELETE" });
-    const next = removeBinderFromCache(id);
+    const next = await removeBinderFromCache(id);
     setBinders(next);
     emitStore(BINDER_EVENT);
   }, []);
@@ -370,7 +406,7 @@ export function useBinders() {
       body: JSON.stringify(patch),
     });
 
-    const next = replaceBinderCache(binder);
+    const next = await replaceBinderCache(binder);
     setBinders(next);
     emitStore(BINDER_EVENT);
     return binder;
@@ -387,7 +423,7 @@ export function useBinders() {
       body: JSON.stringify({}),
     });
 
-    const next = replaceBinderCache(binder);
+    const next = await replaceBinderCache(binder);
     setBinders(next);
     emitStore(BINDER_EVENT);
     return binder;
@@ -399,7 +435,7 @@ export function useBinders() {
       body: JSON.stringify({}),
     });
 
-    const next = replaceBinderCache(binder);
+    const next = await replaceBinderCache(binder);
     setBinders(next);
     emitStore(BINDER_EVENT);
 
@@ -412,7 +448,7 @@ export function useBinders() {
       body: JSON.stringify({ reason }),
     });
 
-    const next = replaceBinderCache(binder);
+    const next = await replaceBinderCache(binder);
     setBinders(next);
     emitStore(BINDER_EVENT);
 
@@ -426,7 +462,7 @@ export function useBinders() {
         body: JSON.stringify({}),
       });
 
-      const next = replaceBinderCache(binder);
+      const next = await replaceBinderCache(binder);
       setBinders(next);
       emitStore(BINDER_EVENT);
       return binder;
@@ -440,7 +476,7 @@ export function useBinders() {
       body: JSON.stringify({}),
     });
 
-    const next = replaceBinderCache(binder);
+    const next = await replaceBinderCache(binder);
     setBinders(next);
     emitStore(BINDER_EVENT);
     return binder;
@@ -453,7 +489,7 @@ export function useBinders() {
         body: JSON.stringify({ email }),
       });
 
-      const next = replaceBinderCache(binder);
+      const next = await replaceBinderCache(binder);
       setBinders(next);
       emitStore(BINDER_EVENT);
       return binder;
@@ -467,7 +503,7 @@ export function useBinders() {
       body: JSON.stringify(payload),
     });
 
-    const next = replaceBinderCache(binder);
+    const next = await replaceBinderCache(binder);
     setBinders(next);
     emitStore(BINDER_EVENT);
 
@@ -485,7 +521,7 @@ export function useBinders() {
         body: JSON.stringify({ what }),
       });
 
-      const next = replaceBinderCache(binder);
+      const next = await replaceBinderCache(binder);
       setBinders(next);
       emitStore(BINDER_EVENT);
       return binder;
@@ -510,7 +546,7 @@ export function useBinders() {
   };
 }
 
-function useBinderCollection(path: string, cacheKey: string) {
+function useBinderCollection(path: string, dbKey: string) {
   const [binders, setBinders] = useState<Binder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -518,14 +554,15 @@ function useBinderCollection(path: string, cacheKey: string) {
     let active = true;
 
     if (hasStoredAuthToken()) {
-      const cached = readBinderCache(cacheKey);
-      if (cached.length) setBinders(cached);
+      void dbReadBinderCache(dbKey).then((cached) => {
+        if (active && cached.length) setBinders(cached);
+      });
     }
 
     const sync = async () => {
       setIsLoading(true);
       try {
-        const next = await fetchScopedBinders(path, cacheKey);
+        const next = await fetchScopedBinders(path, dbKey);
         if (active) {
           setBinders(next);
         }
@@ -552,7 +589,7 @@ function useBinderCollection(path: string, cacheKey: string) {
     const onAuthChange = () => {
       if (!hasStoredAuthToken()) {
         setBinders([]);
-        clearCache(cacheKey);
+        void dbWriteBinderCache(dbKey, []);
         setIsLoading(false);
         return;
       }
@@ -568,21 +605,21 @@ function useBinderCollection(path: string, cacheKey: string) {
       window.removeEventListener("goodflag:store", onStoreChange);
       window.removeEventListener("goodflag:auth", onAuthChange);
     };
-  }, [cacheKey, path]);
+  }, [dbKey, path]);
 
   return { binders, isLoading };
 }
 
 export function useInboxBinders() {
-  return useBinderCollection("/binders/inbox", INBOX_BINDER_CACHE_KEY);
+  return useBinderCollection("/binders/inbox", DB_KEY_INBOX);
 }
 
 export function useParticipatedBinders() {
-  return useBinderCollection("/binders/participated", PARTICIPATED_BINDER_CACHE_KEY);
+  return useBinderCollection("/binders/participated", DB_KEY_PARTICIPATED);
 }
 
 export function useCcBinders() {
-  return useBinderCollection("/binders/cc", CC_BINDER_CACHE_KEY);
+  return useBinderCollection("/binders/cc", DB_KEY_CC);
 }
 
 export function usePublicBinder(binderId: string, signerId: string, token: string) {
