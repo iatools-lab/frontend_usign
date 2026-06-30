@@ -31,6 +31,21 @@ const DB_KEY_PARTICIPATED = "participated";
 const DB_KEY_CC = "cc";
 const DB_KEY_CONTACTS = "contacts";
 
+function clearLegacyBinderLocalStorage() {
+  if (typeof window === "undefined") return;
+
+  try {
+    // Older Usign builds stored complete PDFs and signature images here.
+    // Removing this legacy cache both frees the browser quota and prevents an
+    // old cache write from turning a successful API signature into a UI error.
+    localStorage.removeItem(BINDER_CACHE_KEY);
+  } catch {
+    // Storage may be disabled by the browser; the server remains authoritative.
+  }
+}
+
+clearLegacyBinderLocalStorage();
+
 /**
  * Migration localStorage -> IndexedDB :
  * Les binders sont stockés dans IndexedDB (pas de limite de 5 MB).
@@ -95,7 +110,12 @@ function readCache<T>(key: string, fallback: T): T {
 
 function writeCache<T>(key: string, value: T) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Cache persistence must never make a successful server mutation fail.
+    localStorage.removeItem(key);
+  }
 }
 
 function clearCache(key: string) {
@@ -273,7 +293,11 @@ async function mutatePublicBinder(path: string, body?: Record<string, unknown>) 
   });
 
   if (hasStoredAuthToken()) {
-    await replaceBinderCache(binder);
+    try {
+      await replaceBinderCache(binder);
+    } catch {
+      // The API mutation already succeeded. A local cache failure is harmless.
+    }
     emitStore(BINDER_EVENT);
   }
 
@@ -503,9 +527,14 @@ export function useBinders() {
       body: JSON.stringify(payload),
     });
 
-    const next = await replaceBinderCache(binder);
-    setBinders(next);
+    setBinders((current) =>
+      sortBinders([binder, ...current.filter((item) => item.id !== binder.id)]),
+    );
     emitStore(BINDER_EVENT);
+
+    // Persist opportunistically. The server response, not the browser cache,
+    // determines whether the signature succeeded.
+    void replaceBinderCache(binder).catch(() => undefined);
 
     return binder;
   }, []);
