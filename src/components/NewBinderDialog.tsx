@@ -40,6 +40,10 @@ type LocalBinderDocument = BinderDocument & {
   mimeType?: string;
 };
 
+type LocalBinderAttachment = BinderAttachment & {
+  file?: File;
+};
+
 type StepKey =
   | "general"
   | "documents"
@@ -100,7 +104,7 @@ export function NewBinderDialog({
   const [group, setGroup] = useState("");
   const [consolidation, setConsolidation] = useState(false);
   const [documents, setDocuments] = useState<LocalBinderDocument[]>([]);
-  const [attachments, setAttachments] = useState<BinderAttachment[]>([]);
+  const [attachments, setAttachments] = useState<LocalBinderAttachment[]>([]);
   const [signers, setSigners] = useState<BinderSigner[]>([]);
   const [ccRecipients, setCcRecipients] = useState<{ id: string; name: string; email: string }[]>(
     [],
@@ -276,6 +280,15 @@ export function NewBinderDialog({
         content: file ? await fileToBase64(file) : content,
       })),
     );
+    const attachmentPayloads = await Promise.all(
+      attachments.map(async ({ id, name: attachmentName, size, mimeType, file, content }) => ({
+        id,
+        name: attachmentName,
+        size,
+        mimeType: file?.type || mimeType,
+        content: file ? await fileToBase64(file) : content,
+      })),
+    );
 
     const normalizedSigners: BinderSigner[] = signers
       .map((signer, index) => ({
@@ -300,7 +313,7 @@ export function NewBinderDialog({
       group,
       status: saveAsDraft ? ("draft" as const) : ("started" as const),
       documents: documentPayloads,
-      attachments,
+      attachments: attachmentPayloads,
       signers: normalizedSigners,
       ccRecipients: ccRecipients
         .map((c) => ({
@@ -479,10 +492,12 @@ export function NewBinderDialog({
 
   const onPickAttachments = (files: FileList | null) => {
     if (!files) return;
-    const next: BinderAttachment[] = Array.from(files).map((f, i) => ({
+    const next: LocalBinderAttachment[] = Array.from(files).map((f, i) => ({
       id: `a_${Date.now()}_${i}`,
       name: f.name,
       size: f.size,
+      mimeType: f.type || "application/octet-stream",
+      file: f,
     }));
     setAttachments((prev) => [...prev, ...next]);
   };

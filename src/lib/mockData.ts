@@ -12,6 +12,8 @@ export type BinderAttachment = {
   id: string;
   name: string;
   size?: number;
+  mimeType?: string;
+  content?: string;
 };
 
 export type SignerStatus = "pending" | "signed" | "declined";

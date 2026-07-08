@@ -28,6 +28,7 @@ import { DocumentPagePreview } from "@/components/DocumentPagePreview";
 import { SignaturePad, type SignatureResult } from "@/components/SignaturePad";
 import { apiFetch, getApiBaseUrl, getErrorMessage } from "@/lib/api";
 import { getSession, logout } from "@/lib/auth";
+import { openFetchedFile } from "@/lib/filePreview";
 import { formatDateTime } from "@/lib/format";
 import {
   declinePublicSigner,
@@ -39,7 +40,12 @@ import {
   type BinderInvitation,
 } from "@/lib/store";
 import { getMySignature, type SavedSignature } from "@/lib/mySignature";
-import { getInitialsFromName, type Binder, type SignatureField } from "@/lib/mockData";
+import {
+  getInitialsFromName,
+  type Binder,
+  type BinderAttachment,
+  type SignatureField,
+} from "@/lib/mockData";
 import { cn } from "@/lib/utils";
 
 const searchSchema = z.object({
@@ -242,6 +248,19 @@ function SignPage() {
   const totalToSign = myFields.length;
   const signedCount = Object.keys(pendingSignatures).length;
   const allFilled = totalToSign > 0 && signedCount === totalToSign;
+
+  const openAttachment = async (attachment: BinderAttachment) => {
+    const baseUrl = getApiBaseUrl();
+    const url = token
+      ? `${baseUrl}/public/binders/${binderId}/signers/${signerId}/attachments/${attachment.id}/content?token=${encodeURIComponent(token)}`
+      : `${baseUrl}/binders/${binderId}/attachments/${attachment.id}/content`;
+
+    try {
+      await openFetchedFile(url, attachment.name, { authenticated: !token });
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Impossible d'ouvrir cette pièce jointe."));
+    }
+  };
 
   const toggleLang = () => {
     const next = i18n.language === "fr" ? "en" : "fr";
@@ -647,7 +666,13 @@ function SignPage() {
                     className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm"
                   >
                     <Paperclip className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-foreground">{a.name}</span>
+                    <span className="flex-1 text-foreground">{a.name}</span>
+                    <button
+                      onClick={() => void openAttachment(a)}
+                      className="rounded-md border px-2.5 py-1 text-xs font-medium text-foreground hover:bg-accent"
+                    >
+                      {t("detail.openAttachment")}
+                    </button>
                   </li>
                 ))}
               </ul>

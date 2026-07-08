@@ -42,6 +42,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format";
 import { generateSignedPdf, generateCertificatePdf } from "@/lib/evidence";
+import { openFetchedFile } from "@/lib/filePreview";
 import { getSession } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import {
@@ -89,6 +90,7 @@ function BinderDetail() {
     binders: ownedBinders,
     update,
     startBinder: startBinderAction,
+    remindSigner,
     remindBinder,
     recordDownload,
     updateSignerInvitationEmail,
@@ -125,6 +127,7 @@ function BinderDetail() {
   const [signatureFieldsDirty, setSignatureFieldsDirty] = useState(false);
   const [isSavingSignatureFields, setIsSavingSignatureFields] = useState(false);
   const [isRelaunching, setIsRelaunching] = useState(false);
+  const [remindingSignerId, setRemindingSignerId] = useState<string | null>(null);
   const [draftDocumentFiles, setDraftDocumentFiles] = useState<Record<string, File>>({});
   const [documentPageCounts, setDocumentPageCounts] = useState<Record<string, number>>({});
   const docInputRef = useRef<HTMLInputElement>(null);
@@ -303,6 +306,12 @@ function BinderDetail() {
         (field) => field.documentId === activePlacementDocument.id && field.page === placementPage,
       )
     : [];
+  const currentPendingSignerId =
+    binder.status === "started"
+      ? signers
+          .filter((signer) => signer.status === "pending")
+          .sort((left, right) => left.order - right.order)[0]?.id
+      : undefined;
   const canInspectSignatures =
     isOwner &&
     !editable &&
@@ -379,6 +388,25 @@ function BinderDetail() {
       toast.error(getErrorMessage(error, t("detail.inviteEmailUpdateError")));
     } finally {
       setSavingSignerEmailId(null);
+    }
+  };
+
+  const remindCurrentSigner = async (signer: BinderSigner) => {
+    if (!isOwner || binder.status !== "started" || signer.status !== "pending") {
+      return;
+    }
+
+    setRemindingSignerId(signer.id);
+    try {
+      await remindSigner(binder.id, signer.id, {
+        name: session?.name ?? binder.ownerName,
+        email: session?.email ?? binder.ownerEmail,
+      });
+      toast.success(t("detail.remindSignerSuccess"));
+    } catch (error) {
+      toast.error(getErrorMessage(error, t("detail.remindSignerError")));
+    } finally {
+      setRemindingSignerId(null);
     }
   };
 
@@ -646,14 +674,36 @@ function BinderDetail() {
     update(binder.id, { attachments });
   };
 
-  const onPickAttachments = (files: FileList | null) => {
+  const onPickAttachments = async (files: FileList | null) => {
     if (!files || !editable) return;
-    const next: BinderAttachment[] = Array.from(files).map((f, i) => ({
-      id: `a_${Date.now()}_${i}`,
-      name: f.name,
-      size: f.size,
-    }));
-    update(binder.id, { attachments: [...(binder.attachments ?? []), ...next] });
+    const selectedFiles = Array.from(files);
+
+    try {
+      const next: BinderAttachment[] = await Promise.all(
+        selectedFiles.map(async (file, index) => ({
+          id: `a_${Date.now()}_${index}`,
+          name: file.name,
+          size: file.size,
+          mimeType: file.type || "application/octet-stream",
+          content: await fileToBase64(file),
+        })),
+      );
+      await update(binder.id, { attachments: [...(binder.attachments ?? []), ...next] });
+    } catch (error) {
+      toast.error(getErrorMessage(error));
+    }
+  };
+
+  const openAttachment = async (attachment: BinderAttachment) => {
+    try {
+      await openFetchedFile(
+        `${getApiBaseUrl()}/binders/${binder.id}/attachments/${attachment.id}/content`,
+        attachment.name,
+        { authenticated: true },
+      );
+    } catch (error) {
+      toast.error(getErrorMessage(error, "Impossible d'ouvrir cette pièce jointe."));
+    }
   };
 
   const startBinder = () => {
@@ -913,8 +963,14 @@ function BinderDetail() {
                     const signed = s.status === "signed";
                     const canFixInvitationEmail =
                       !editable && s.status === "pending" && s.inviteEmailStatus === "failed";
+                    const canRemindSigner =
+                      isOwner &&
+                      binder.status === "started" &&
+                      s.status === "pending" &&
+                      s.id === currentPendingSignerId;
                     const isEditingSignerEmail = editingSignerEmailId === s.id;
                     const isSavingSignerEmail = savingSignerEmailId === s.id;
+                    const isRemindingSigner = remindingSignerId === s.id;
                     return (
                       <li
                         key={s.id}
@@ -1026,6 +1082,18 @@ function BinderDetail() {
                             >
                               <Pencil className="h-3.5 w-3.5" />
                               {t("detail.editInviteEmail")}
+                            </button>
+                          )}
+                          {canRemindSigner && (
+                            <button
+                              onClick={() => void remindCurrentSigner(s)}
+                              disabled={Boolean(remindingSignerId)}
+                              className="inline-flex items-center gap-1 rounded-md border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              <BellRing className="h-3.5 w-3.5" />
+                              {isRemindingSigner
+                                ? t("detail.remindingSigner")
+                                : t("detail.remindSigner")}
                             </button>
                           )}
                           <button
@@ -1159,6 +1227,13 @@ function BinderDetail() {
                         >
                           <Paperclip className="h-4 w-4 text-muted-foreground" />
                           <span className="flex-1 text-sm text-foreground">{a.name}</span>
+                          <button
+                            onClick={() => void openAttachment(a)}
+                            className="inline-flex items-center gap-1 rounded-md border bg-background px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-accent"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                            {t("detail.openAttachment")}
+                          </button>
                           {editable && (
                             <button
                               onClick={() => removeAttachment(a.id)}

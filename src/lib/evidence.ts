@@ -16,7 +16,8 @@ import { formatDateTime } from "./format";
 type PdfjsModule = typeof import("pdfjs-dist");
 
 let pdfjsPromise: Promise<PdfjsModule> | null = null;
-const SIGNED_PDF_RENDER_SCALE = 1.5;
+const SIGNED_PDF_RENDER_SCALE = 1.2;
+const SIGNED_PDF_PAGE_IMAGE_QUALITY = 0.82;
 const sourceDocumentBytesCache = new Map<string, Promise<ArrayBuffer>>();
 
 const KIND_LABEL_FR: Record<string, string> = {
@@ -255,6 +256,174 @@ type BuildSignedPdfOptions = {
   documentIds?: string[];
 };
 
+type ZipEntry = {
+  name: string;
+  data: Uint8Array;
+};
+
+const ZIP_ENCODER = new TextEncoder();
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+
+  for (let index = 0; index < 256; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+    }
+    table[index] = value >>> 0;
+  }
+
+  return table;
+})();
+
+function sanitizeFileName(value: string, fallback = "document") {
+  const sanitized = value
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9._-]+/gi, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return sanitized || fallback;
+}
+
+function uniqueArchiveName(name: string, usedNames: Set<string>) {
+  const safeName = sanitizeFileName(name);
+  const dotIndex = safeName.lastIndexOf(".");
+  const base = dotIndex > 0 ? safeName.slice(0, dotIndex) : safeName;
+  const extension = dotIndex > 0 ? safeName.slice(dotIndex) : "";
+  let candidate = safeName;
+  let suffix = 2;
+
+  while (usedNames.has(candidate.toLowerCase())) {
+    candidate = `${base}_${suffix}${extension}`;
+    suffix += 1;
+  }
+
+  usedNames.add(candidate.toLowerCase());
+  return candidate;
+}
+
+function crc32(data: Uint8Array) {
+  let crc = 0xffffffff;
+
+  for (const byte of data) {
+    crc = CRC32_TABLE[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function dosDateTime(date = new Date()) {
+  const year = Math.max(1980, date.getFullYear());
+  const dosTime =
+    (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  const dosDate = ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+  return { dosTime, dosDate };
+}
+
+function writeUint16(view: DataView, offset: number, value: number) {
+  view.setUint16(offset, value, true);
+}
+
+function writeUint32(view: DataView, offset: number, value: number) {
+  view.setUint32(offset, value >>> 0, true);
+}
+
+function concatChunks(chunks: Uint8Array[]) {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const output = new Uint8Array(totalLength);
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return output;
+}
+
+function buildZip(entries: ZipEntry[]) {
+  const chunks: Uint8Array[] = [];
+  const centralDirectory: Uint8Array[] = [];
+  const { dosTime, dosDate } = dosDateTime();
+  let offset = 0;
+
+  for (const entry of entries) {
+    const fileName = ZIP_ENCODER.encode(entry.name);
+    const checksum = crc32(entry.data);
+    const localHeader = new Uint8Array(30 + fileName.length);
+    const localView = new DataView(localHeader.buffer);
+
+    writeUint32(localView, 0, 0x04034b50);
+    writeUint16(localView, 4, 20);
+    writeUint16(localView, 6, 0x0800);
+    writeUint16(localView, 8, 0);
+    writeUint16(localView, 10, dosTime);
+    writeUint16(localView, 12, dosDate);
+    writeUint32(localView, 14, checksum);
+    writeUint32(localView, 18, entry.data.length);
+    writeUint32(localView, 22, entry.data.length);
+    writeUint16(localView, 26, fileName.length);
+    writeUint16(localView, 28, 0);
+    localHeader.set(fileName, 30);
+
+    const centralHeader = new Uint8Array(46 + fileName.length);
+    const centralView = new DataView(centralHeader.buffer);
+
+    writeUint32(centralView, 0, 0x02014b50);
+    writeUint16(centralView, 4, 20);
+    writeUint16(centralView, 6, 20);
+    writeUint16(centralView, 8, 0x0800);
+    writeUint16(centralView, 10, 0);
+    writeUint16(centralView, 12, dosTime);
+    writeUint16(centralView, 14, dosDate);
+    writeUint32(centralView, 16, checksum);
+    writeUint32(centralView, 20, entry.data.length);
+    writeUint32(centralView, 24, entry.data.length);
+    writeUint16(centralView, 28, fileName.length);
+    writeUint16(centralView, 30, 0);
+    writeUint16(centralView, 32, 0);
+    writeUint16(centralView, 34, 0);
+    writeUint16(centralView, 36, 0);
+    writeUint32(centralView, 38, 0);
+    writeUint32(centralView, 42, offset);
+    centralHeader.set(fileName, 46);
+
+    chunks.push(localHeader, entry.data);
+    centralDirectory.push(centralHeader);
+    offset += localHeader.length + entry.data.length;
+  }
+
+  const centralDirectoryOffset = offset;
+  const centralDirectoryBytes = concatChunks(centralDirectory);
+  const endOfCentralDirectory = new Uint8Array(22);
+  const endView = new DataView(endOfCentralDirectory.buffer);
+
+  writeUint32(endView, 0, 0x06054b50);
+  writeUint16(endView, 4, 0);
+  writeUint16(endView, 6, 0);
+  writeUint16(endView, 8, entries.length);
+  writeUint16(endView, 10, entries.length);
+  writeUint32(endView, 12, centralDirectoryBytes.length);
+  writeUint32(endView, 16, centralDirectoryOffset);
+  writeUint16(endView, 20, 0);
+
+  return new Blob([...chunks, centralDirectoryBytes, endOfCentralDirectory], {
+    type: "application/zip",
+  });
+}
+
+function saveBlob(blob: Blob, fileName: string) {
+  const url = window.URL.createObjectURL(blob);
+  const anchor = window.document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.rel = "noopener noreferrer";
+  anchor.click();
+  window.setTimeout(() => window.URL.revokeObjectURL(url), 60_000);
+}
+
 async function buildSignedPdf(binder: Binder, lang: string, options: BuildSignedPdfOptions = {}) {
   const selectedIds = options.documentIds?.length ? new Set(options.documentIds) : null;
   const documents = (binder.documents ?? []).filter(
@@ -310,6 +479,9 @@ async function buildSignedPdf(binder: Binder, lang: string, options: BuildSigned
           throw new Error("Impossible de préparer le rendu du PDF signé.");
         }
 
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+
         await sourcePage.render({ canvas, canvasContext: context, viewport: renderViewport })
           .promise;
 
@@ -328,8 +500,8 @@ async function buildSignedPdf(binder: Binder, lang: string, options: BuildSigned
         }
 
         output.addImage(
-          canvas,
-          "PNG",
+          canvas.toDataURL("image/jpeg", SIGNED_PDF_PAGE_IMAGE_QUALITY),
+          "JPEG",
           0,
           0,
           exportViewport.width,
@@ -362,8 +534,32 @@ async function buildSignedPdf(binder: Binder, lang: string, options: BuildSigned
 
 /** Document signé — reconstitue les pages d'origine avec les zones signées. */
 export async function generateSignedPdf(binder: Binder, lang: string = "fr"): Promise<void> {
-  const output = await buildSignedPdf(binder, lang);
-  output.save(`${binder.name.replace(/[^a-z0-9-_]+/gi, "_")}_signe.pdf`);
+  const documents = binder.documents ?? [];
+  const archiveBaseName = sanitizeFileName(binder.name, "parapheur");
+
+  if (documents.length <= 1) {
+    const output = await buildSignedPdf(binder, lang);
+    output.save(`${archiveBaseName}_signe.pdf`);
+    return;
+  }
+
+  const usedNames = new Set<string>();
+  const entries: ZipEntry[] = [];
+
+  for (const [index, document] of documents.entries()) {
+    const output = await buildSignedPdf(binder, lang, { documentIds: [document.id] });
+    const bytes = new Uint8Array(output.output("arraybuffer"));
+    const sourceName = document.name.toLowerCase().endsWith(".pdf")
+      ? document.name.replace(/\.pdf$/i, "_signe.pdf")
+      : `${document.name}_signe.pdf`;
+
+    entries.push({
+      name: uniqueArchiveName(`${String(index + 1).padStart(2, "0")}_${sourceName}`, usedNames),
+      data: bytes,
+    });
+  }
+
+  saveBlob(buildZip(entries), `${archiveBaseName}_documents_signes.zip`);
 }
 
 export async function openSignedDocumentPdf(
