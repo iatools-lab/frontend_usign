@@ -328,18 +328,17 @@ export function NewBinderDialog({
   };
 
   const saveDraftIfNeeded = async () => {
-    if (!draftBinder) {
-      return "skipped" as const;
-    }
-
     if (!hasDraftContent || !name.trim()) {
       return "skipped" as const;
     }
 
     setIsSavingDraft(true);
     try {
+      const payload = await buildPayload(true);
       if (draftBinder) {
-        await update(draftBinder.id, await buildPayload(true));
+        await update(draftBinder.id, payload);
+      } else {
+        await create(payload);
       }
       toast.success("Brouillon enregistre");
       return "saved" as const;
