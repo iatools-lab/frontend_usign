@@ -6,7 +6,7 @@ import { z } from "zod";
 import { AppShell } from "@/components/AppShell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { NewBinderDialog } from "@/components/NewBinderDialog";
-import { useBinders, useCcBinders } from "@/lib/store";
+import { useBinderActions, useBinders, useCcBinders } from "@/lib/store";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format";
@@ -31,8 +31,9 @@ function BindersByStatus() {
   const { status } = Route.useParams();
   const { draftId } = Route.useSearch();
   const { t, i18n } = useTranslation();
-  const { binders: ownedBinders, remove } = useBinders();
+  const { binders: ownedBinders } = useBinders();
   const { binders: ccBinders } = useCcBinders();
+  const { remove } = useBinderActions();
 
   const binders = useMemo(() => {
     const map = new Map<string, Binder>();

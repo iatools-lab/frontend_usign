@@ -2,6 +2,7 @@ import { getStoredAuthToken } from "./api";
 
 type OpenFetchedFileOptions = {
   authenticated?: boolean;
+  preferDirect?: boolean;
 };
 
 export async function openFetchedFile(
@@ -9,6 +10,14 @@ export async function openFetchedFile(
   fileName: string,
   options: OpenFetchedFileOptions = {},
 ) {
+  const shouldTryDirect = options.preferDirect ?? !options.authenticated;
+  if (shouldTryDirect) {
+    const popup = window.open(url, "_blank", "noopener,noreferrer");
+    if (popup) {
+      return;
+    }
+  }
+
   const headers = new Headers();
 
   if (options.authenticated) {

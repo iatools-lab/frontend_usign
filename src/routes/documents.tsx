@@ -4,127 +4,24 @@ import { useTranslation } from "react-i18next";
 import { Search, FileText, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
-import { getErrorMessage } from "@/lib/api";
-import { openSignedDocumentPdf } from "@/lib/evidence";
+import { getApiBaseUrl, getErrorMessage } from "@/lib/api";
 import { formatDateTime } from "@/lib/format";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { getSession } from "@/lib/auth";
-import { useBinders, useParticipatedBinders } from "@/lib/store";
-import type { Binder, BinderSigner } from "@/lib/mockData";
+import { openFetchedFile } from "@/lib/filePreview";
+import { useDocumentRecords } from "@/lib/store";
+import type { DocumentRecord } from "@/lib/store";
 
 export const Route = createFileRoute("/documents")({
   head: () => ({ meta: [{ title: "Documents — Usign" }] }),
   component: DocumentsPage,
 });
 
-type DocumentRecord = {
-  key: string;
-  binder: Binder;
-  documentId: string;
-  binderId: string;
-  name: string;
-  binderName: string;
-  binderDescription?: string;
-  ownerName: string;
-  ownerEmail: string;
-  updatedAt: string;
-  pages?: number;
-  isOwned: boolean;
-  signerOutcome?: "signed" | "declined";
-};
-
-function findParticipatedSigner(binder: Binder, email: string) {
-  return (binder.signers ?? []).find(
-    (signer) =>
-      signer.email.toLowerCase() === email.toLowerCase() &&
-      (signer.status === "signed" || signer.status === "declined"),
-  );
-}
-
 function DocumentsPage() {
   const { t, i18n } = useTranslation();
-  const { binders } = useBinders();
-  const { binders: participatedBinders, isLoading } = useParticipatedBinders();
-  const session = getSession();
-  const sessionEmail = session?.email?.trim().toLowerCase() ?? "";
+  const { documents: records, isLoading } = useDocumentRecords();
   const [query, setQuery] = useState("");
   const [openingKey, setOpeningKey] = useState<string | null>(null);
-
-  const records = useMemo(() => {
-    const map = new Map<string, DocumentRecord>();
-
-    const upsertRecord = (record: DocumentRecord) => {
-      const current = map.get(record.key);
-
-      map.set(record.key, {
-        ...record,
-        isOwned: record.isOwned || current?.isOwned || false,
-        signerOutcome: record.signerOutcome ?? current?.signerOutcome,
-      });
-    };
-
-    const upsertOwned = (binder: Binder) => {
-      const hasSignatureHistory = (binder.signers ?? []).some(
-        (signer) => signer.status === "signed" || signer.status === "declined",
-      );
-      if (!hasSignatureHistory) {
-        return;
-      }
-
-      for (const document of binder.documents ?? []) {
-        upsertRecord({
-          key: `${binder.id}:${document.id}`,
-          binder,
-          documentId: document.id,
-          binderId: binder.id,
-          name: document.name,
-          binderName: binder.name,
-          binderDescription: binder.description,
-          ownerName: binder.ownerName,
-          ownerEmail: binder.ownerEmail,
-          updatedAt: binder.updatedAt,
-          pages: document.pages,
-          isOwned: true,
-          signerOutcome: undefined,
-        });
-      }
-    };
-
-    const upsertParticipated = (binder: Binder, signer: BinderSigner) => {
-      for (const document of binder.documents ?? []) {
-        upsertRecord({
-          key: `${binder.id}:${document.id}`,
-          binder,
-          documentId: document.id,
-          binderId: binder.id,
-          name: document.name,
-          binderName: binder.name,
-          binderDescription: binder.description,
-          ownerName: binder.ownerName,
-          ownerEmail: binder.ownerEmail,
-          updatedAt: binder.updatedAt,
-          pages: document.pages,
-          isOwned: false,
-          signerOutcome: signer.status === "declined" ? "declined" : "signed",
-        });
-      }
-    };
-
-    for (const binder of binders) {
-      upsertOwned(binder);
-    }
-
-    if (sessionEmail) {
-      for (const binder of participatedBinders) {
-        const signer = findParticipatedSigner(binder, sessionEmail);
-        if (!signer) continue;
-        upsertParticipated(binder, signer);
-      }
-    }
-
-    return [...map.values()].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
-  }, [binders, participatedBinders, sessionEmail]);
 
   const documents = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -145,7 +42,11 @@ function DocumentsPage() {
 
     setOpeningKey(document.key);
     try {
-      await openSignedDocumentPdf(document.binder, document.documentId, i18n.language);
+      await openFetchedFile(
+        `${getApiBaseUrl()}/binders/${document.binderId}/documents/${document.documentId}/signed-content`,
+        document.name,
+        { authenticated: true, preferDirect: true },
+      );
     } catch (error) {
       toast.error(getErrorMessage(error, t("documents.errors.open")));
     } finally {

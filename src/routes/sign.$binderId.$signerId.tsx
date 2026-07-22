@@ -36,7 +36,7 @@ import {
   getSignerInvitation,
   markPublicSignerViewed,
   signPublicSigner,
-  useBinders,
+  useBinderActions,
   type BinderInvitation,
 } from "@/lib/store";
 import { getMySignature, type SavedSignature } from "@/lib/mySignature";
@@ -64,7 +64,7 @@ function SignPage() {
   const { binderId, signerId } = Route.useParams();
   const { token } = Route.useSearch();
   const { t, i18n } = useTranslation();
-  const { signAs, declineAs, markSignerViewed } = useBinders();
+  const { signAs, declineAs, markSignerViewed } = useBinderActions();
   const navigate = useNavigate();
   const session = getSession();
   const sessionEmail = session?.email ?? null;
@@ -256,7 +256,10 @@ function SignPage() {
       : `${baseUrl}/binders/${binderId}/attachments/${attachment.id}/content`;
 
     try {
-      await openFetchedFile(url, attachment.name, { authenticated: !token });
+      await openFetchedFile(url, attachment.name, {
+        authenticated: !token,
+        preferDirect: true,
+      });
     } catch (error) {
       toast.error(getErrorMessage(error, "Impossible d'ouvrir cette pièce jointe."));
     }

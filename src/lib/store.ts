@@ -92,7 +92,28 @@ export type BinderInvitation = {
   signPath: string;
 };
 
+type PaginatedResponse<T> = {
+  items: T[];
+  nextCursor?: string;
+};
+
 type CachedBinder = Partial<Binder> & Pick<Binder, "id" | "name" | "status" | "createdAt">;
+
+export type DocumentRecord = {
+  key: string;
+  binder: Binder;
+  documentId: string;
+  binderId: string;
+  name: string;
+  binderName: string;
+  binderDescription?: string;
+  ownerName: string;
+  ownerEmail: string;
+  updatedAt: string;
+  pages?: number;
+  isOwned: boolean;
+  signerOutcome?: "signed" | "declined";
+};
 
 // ── Fonctions localStorage (gardées pour contacts et compatibilité) ──
 
@@ -182,6 +203,10 @@ function sortBinders<T extends Pick<Partial<Binder>, "updatedAt" | "createdAt">>
   );
 }
 
+function unwrapPageItems<T>(payload: T[] | PaginatedResponse<T>): T[] {
+  return Array.isArray(payload) ? payload : payload.items;
+}
+
 function sortContacts(items: Contact[]) {
   return [...items].sort((left, right) => {
     const leftName = `${left.firstName} ${left.lastName}`.trim().toLowerCase();
@@ -233,7 +258,8 @@ async function fetchBinders() {
     return [] as Binder[];
   }
 
-  const binders = await apiFetch<Binder[]>("/binders");
+  const payload = await apiFetch<Binder[] | PaginatedResponse<Binder>>("/binders?limit=100");
+  const binders = unwrapPageItems(payload);
   const next = sortBinders(binders.map(normalizeBinderRecord));
   await dbWriteBinderCache(DB_KEY_BINDERS, next);
   return next;
@@ -245,10 +271,31 @@ async function fetchScopedBinders(path: string, dbKey: string) {
     return [] as Binder[];
   }
 
-  const binders = await apiFetch<Binder[]>(path);
+  const separator = path.includes("?") ? "&" : "?";
+  const payload = await apiFetch<Binder[] | PaginatedResponse<Binder>>(
+    `${path}${separator}limit=100`,
+  );
+  const binders = unwrapPageItems(payload);
   const next = sortBinders(binders.map(normalizeBinderRecord));
   await dbWriteBinderCache(dbKey, next);
   return next;
+}
+
+async function fetchBinderDetail(id: string) {
+  const binder = await apiFetch<Binder>(`/binders/${id}`);
+  await replaceBinderCache(binder);
+  return normalizeBinderRecord(binder);
+}
+
+async function fetchDocumentRecords(query?: string) {
+  const params = new URLSearchParams({ limit: "100" });
+  if (query?.trim()) {
+    params.set("query", query.trim());
+  }
+  const payload = await apiFetch<DocumentRecord[] | PaginatedResponse<DocumentRecord>>(
+    `/documents?${params.toString()}`,
+  );
+  return unwrapPageItems(payload);
 }
 
 async function fetchContacts() {
@@ -334,6 +381,165 @@ export async function signPublicSigner(
   );
 }
 
+async function createBinderRequest(data: CreateBinderInput) {
+  const binder = await apiFetch<Binder>("/binders", {
+    method: "POST",
+    body: JSON.stringify({
+      name: data.name,
+      description: data.description,
+      group: data.group,
+      status: data.status,
+      documents: data.documents,
+      attachments: data.attachments,
+      signers: data.signers,
+      ccRecipients: data.ccRecipients,
+      signatureFields: data.signatureFields,
+      notifications: data.notifications,
+      consolidation: data.consolidation,
+    }),
+  });
+
+  await replaceBinderCache(binder);
+  emitStore(BINDER_EVENT);
+  return binder;
+}
+
+async function updateBinderRequest(id: string, patch: UpdateBinderInput) {
+  const binder = await apiFetch<Binder>(`/binders/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
+
+  await replaceBinderCache(binder);
+  emitStore(BINDER_EVENT);
+  return binder;
+}
+
+async function removeBinderRequest(id: string) {
+  await apiFetch<{ ok: boolean }>(`/binders/${id}`, { method: "DELETE" });
+  await removeBinderFromCache(id);
+  emitStore(BINDER_EVENT);
+}
+
+async function startBinderRequest(binderId: string) {
+  const binder = await apiFetch<Binder>(`/binders/${binderId}/start`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+
+  await replaceBinderCache(binder);
+  emitStore(BINDER_EVENT);
+  return binder;
+}
+
+async function markSignerViewedRequest(binderId: string, signerId: string) {
+  const binder = await apiFetch<Binder>(`/binders/${binderId}/signers/${signerId}/view`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+
+  await replaceBinderCache(binder);
+  emitStore(BINDER_EVENT);
+  return binder;
+}
+
+async function declineAsRequest(binderId: string, signerId: string, reason: string) {
+  const binder = await apiFetch<Binder>(`/binders/${binderId}/signers/${signerId}/decline`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+
+  await replaceBinderCache(binder);
+  emitStore(BINDER_EVENT);
+  return binder;
+}
+
+async function remindSignerRequest(binderId: string, signerId: string) {
+  const binder = await apiFetch<Binder>(`/binders/${binderId}/signers/${signerId}/remind`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+
+  await replaceBinderCache(binder);
+  emitStore(BINDER_EVENT);
+  return binder;
+}
+
+async function remindBinderRequest(binderId: string) {
+  const binder = await apiFetch<Binder>(`/binders/${binderId}/remind`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+
+  await replaceBinderCache(binder);
+  emitStore(BINDER_EVENT);
+  return binder;
+}
+
+async function updateSignerInvitationEmailRequest(
+  binderId: string,
+  signerId: string,
+  email: string,
+) {
+  const binder = await apiFetch<Binder>(`/binders/${binderId}/signers/${signerId}/invitation`, {
+    method: "PATCH",
+    body: JSON.stringify({ email }),
+  });
+
+  await replaceBinderCache(binder);
+  emitStore(BINDER_EVENT);
+  return binder;
+}
+
+async function signAsRequest(binderId: string, signerId: string, payload: SignPayload) {
+  const binder = await apiFetch<Binder>(`/binders/${binderId}/signers/${signerId}/sign`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+
+  emitStore(BINDER_EVENT);
+  void replaceBinderCache(binder).catch(() => undefined);
+  return binder;
+}
+
+async function recordDownloadRequest(binderId: string, what: "signed_pdf" | "certificate") {
+  const binder = await apiFetch<Binder>(`/binders/${binderId}/downloads`, {
+    method: "POST",
+    body: JSON.stringify({ what }),
+  });
+
+  await replaceBinderCache(binder);
+  emitStore(BINDER_EVENT);
+  return binder;
+}
+
+export function useBinderActions() {
+  return {
+    create: useCallback(createBinderRequest, []),
+    remove: useCallback(removeBinderRequest, []),
+    update: useCallback(updateBinderRequest, []),
+    signAs: useCallback(signAsRequest, []),
+    startBinder: useCallback(startBinderRequest, []),
+    markSignerViewed: useCallback(markSignerViewedRequest, []),
+    declineAs: useCallback(declineAsRequest, []),
+    remindSigner: useCallback(
+      async (binderId: string, signerId: string, _actor?: { name: string; email: string }) =>
+        remindSignerRequest(binderId, signerId),
+      [],
+    ),
+    remindBinder: useCallback(remindBinderRequest, []),
+    updateSignerInvitationEmail: useCallback(updateSignerInvitationEmailRequest, []),
+    recordDownload: useCallback(
+      async (
+        binderId: string,
+        _actor: { name?: string; email?: string },
+        what: "signed_pdf" | "certificate",
+      ) => recordDownloadRequest(binderId, what),
+      [],
+    ),
+  };
+}
+
 export function useBinders() {
   const [binders, setBinders] = useState<Binder[]>([]);
 
@@ -393,7 +599,6 @@ export function useBinders() {
   }, []);
 
   const create = useCallback(async (data: CreateBinderInput) => {
-    console.log("CREATE BINDER PAYLOAD", data);
     const binder = await apiFetch<Binder>("/binders", {
       method: "POST",
       body: JSON.stringify({
@@ -639,6 +844,76 @@ function useBinderCollection(path: string, dbKey: string) {
   return { binders, isLoading };
 }
 
+export function useBinderDetail(id: string) {
+  const [binder, setBinder] = useState<Binder | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    const next = await fetchBinderDetail(id);
+    setBinder(next);
+    return next;
+  }, [id]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (hasStoredAuthToken()) {
+      void Promise.all([
+        dbReadBinderCache(DB_KEY_BINDERS),
+        dbReadBinderCache(DB_KEY_CC),
+        dbReadBinderCache(DB_KEY_INBOX),
+        dbReadBinderCache(DB_KEY_PARTICIPATED),
+      ]).then((collections) => {
+        if (!active) return;
+        const cached = collections.flat().find((item) => item.id === id);
+        if (cached) {
+          setBinder(cached);
+        }
+      });
+    }
+
+    const sync = async () => {
+      setIsLoading(true);
+      try {
+        const next = await fetchBinderDetail(id);
+        if (active) {
+          setBinder(next);
+        }
+      } catch {
+        if (active) {
+          setBinder(null);
+        }
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void sync();
+
+    const onStoreChange = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === BINDER_EVENT) {
+        void sync();
+      }
+    };
+    const onAuthChange = () => {
+      void sync();
+    };
+
+    window.addEventListener("goodflag:store", onStoreChange);
+    window.addEventListener("goodflag:auth", onAuthChange);
+
+    return () => {
+      active = false;
+      window.removeEventListener("goodflag:store", onStoreChange);
+      window.removeEventListener("goodflag:auth", onAuthChange);
+    };
+  }, [id]);
+
+  return { binder, isLoading, refresh };
+}
+
 export function useInboxBinders() {
   return useBinderCollection("/binders/inbox", DB_KEY_INBOX);
 }
@@ -649,6 +924,55 @@ export function useParticipatedBinders() {
 
 export function useCcBinders() {
   return useBinderCollection("/binders/cc", DB_KEY_CC);
+}
+
+export function useDocumentRecords(query?: string) {
+  const [documents, setDocuments] = useState<DocumentRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    const sync = async () => {
+      setIsLoading(true);
+      try {
+        const next = await fetchDocumentRecords(query);
+        if (active) {
+          setDocuments(next);
+        }
+      } catch {
+        if (active) {
+          setDocuments([]);
+        }
+      } finally {
+        if (active) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void sync();
+
+    const onStoreChange = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === BINDER_EVENT) {
+        void sync();
+      }
+    };
+    const onAuthChange = () => {
+      void sync();
+    };
+
+    window.addEventListener("goodflag:store", onStoreChange);
+    window.addEventListener("goodflag:auth", onAuthChange);
+
+    return () => {
+      active = false;
+      window.removeEventListener("goodflag:store", onStoreChange);
+      window.removeEventListener("goodflag:auth", onAuthChange);
+    };
+  }, [query]);
+
+  return { documents, isLoading };
 }
 
 export function usePublicBinder(binderId: string, signerId: string, token: string) {

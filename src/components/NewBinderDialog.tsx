@@ -20,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { getApiBaseUrl, getErrorMessage, getStoredAuthToken } from "@/lib/api";
 import { isAllowedSignerEmail } from "@/lib/email";
-import { useBinders, useContacts } from "@/lib/store";
+import { useBinderActions, useContacts } from "@/lib/store";
 import { getSession } from "@/lib/auth";
 import {
   type BinderDocument,
@@ -93,7 +93,7 @@ export function NewBinderDialog({
   draftBinder?: Binder | null;
 }) {
   const { t } = useTranslation();
-  const { create, update, startBinder } = useBinders();
+  const { create, update, startBinder } = useBinderActions();
   const { contacts, create: createContact } = useContacts();
   const [focusedSignerId, setFocusedSignerId] = useState<string | null>(null);
   const isEditingDraft = Boolean(draftBinder);

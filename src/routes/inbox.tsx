@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { Inbox as InboxIcon, Pen, Zap, AlertCircle } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
-import { useBinders, useInboxBinders } from "@/lib/store";
+import { useBinderActions, useInboxBinders } from "@/lib/store";
 import { getSession } from "@/lib/auth";
 import { useMySignature } from "@/lib/mySignature";
 import { formatDateTime } from "@/lib/format";
@@ -32,7 +32,7 @@ type InboxItem = {
 function InboxPage() {
   const { t, i18n } = useTranslation();
   const { binders, isLoading } = useInboxBinders();
-  const { signAs } = useBinders();
+  const { signAs } = useBinderActions();
   const navigate = useNavigate();
   const session = getSession();
   const email = session?.email ?? "";

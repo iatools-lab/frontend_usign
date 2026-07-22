@@ -33,7 +33,7 @@ import {
 import { AppShell } from "@/components/AppShell";
 import { DocumentPagePreview } from "@/components/DocumentPagePreview";
 import { StatusBadge } from "@/components/StatusBadge";
-import { useBinders, useCcBinders } from "@/lib/store";
+import { useBinderActions, useBinderDetail } from "@/lib/store";
 import { getApiBaseUrl, getErrorMessage, getStoredAuthToken } from "@/lib/api";
 import { isAllowedSignerEmail } from "@/lib/email";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -41,7 +41,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format";
-import { generateSignedPdf, generateCertificatePdf } from "@/lib/evidence";
 import { openFetchedFile } from "@/lib/filePreview";
 import { getSession } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -86,25 +85,18 @@ async function fileToBase64(file: File): Promise<string> {
 function BinderDetail() {
   const { id } = Route.useParams();
   const { t, i18n } = useTranslation();
+  const { binder, isLoading } = useBinderDetail(id);
   const {
-    binders: ownedBinders,
     update,
     startBinder: startBinderAction,
     remindSigner,
     remindBinder,
     recordDownload,
     updateSignerInvitationEmail,
-  } = useBinders();
-
-  const { binders: ccBinders } = useCcBinders();
-
-  const binders = [...ownedBinders, ...ccBinders].filter(
-    (binder, index, self) => index === self.findIndex((b) => b.id === binder.id),
-  );
+  } = useBinderActions();
   const navigate = useNavigate();
   const session = getSession();
   const sessionEmail = session?.email.trim().toLowerCase() ?? null;
-  const binder = binders.find((b) => b.id === id);
   const isOwner = binder?.isOwner ?? false;
   const isCcRecipient = binder?.isCcRecipient ?? false;
   const editable = binder?.status === "draft" && isOwner;
@@ -270,7 +262,7 @@ function BinderDetail() {
     return (
       <AppShell>
         <div className="text-center text-muted-foreground">
-          Parapheur introuvable.{" "}
+          {isLoading ? "Chargement…" : "Parapheur introuvable."}{" "}
           <Link to="/binders/$status" params={{ status: "all" }} className="text-action underline">
             Retour
           </Link>
@@ -699,7 +691,7 @@ function BinderDetail() {
       await openFetchedFile(
         `${getApiBaseUrl()}/binders/${binder.id}/attachments/${attachment.id}/content`,
         attachment.name,
-        { authenticated: true },
+        { authenticated: true, preferDirect: true },
       );
     } catch (error) {
       toast.error(getErrorMessage(error, "Impossible d'ouvrir cette pièce jointe."));
@@ -728,7 +720,11 @@ function BinderDetail() {
   };
 
   const onDownloadSigned = () => {
-    void generateSignedPdf(binder, i18n.language)
+    void openFetchedFile(
+      `${getApiBaseUrl()}/binders/${binder.id}/evidence/signed_pdf/content`,
+      `${binder.name}_documents_signes`,
+      { authenticated: true, preferDirect: true },
+    )
       .then(() =>
         recordDownload(binder.id, { name: session?.name, email: session?.email }, "signed_pdf"),
       )
@@ -737,8 +733,17 @@ function BinderDetail() {
       });
   };
   const onDownloadCertificate = () => {
-    generateCertificatePdf(binder, i18n.language);
-    recordDownload(binder.id, { name: session?.name, email: session?.email }, "certificate");
+    void openFetchedFile(
+      `${getApiBaseUrl()}/binders/${binder.id}/evidence/certificate/content`,
+      `${binder.name}_certificat.pdf`,
+      { authenticated: true, preferDirect: true },
+    )
+      .then(() =>
+        recordDownload(binder.id, { name: session?.name, email: session?.email }, "certificate"),
+      )
+      .catch((error) => {
+        toast.error(getErrorMessage(error, "TÃ©lÃ©chargement impossible"));
+      });
   };
 
   return (
