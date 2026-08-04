@@ -45,7 +45,7 @@ import {
   type Binder,
   type BinderAttachment,
   type SignatureField,
-} from "@/lib/mockData";
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const searchSchema = z.object({
@@ -200,20 +200,17 @@ function SignPage() {
     if (!activeDoc) return undefined;
 
     const baseUrl = getApiBaseUrl();
-    const headers: Record<string, string> = {};
 
     let url: string;
     if (token) {
       url = `${baseUrl}/public/binders/${binderId}/signers/${signerId}/documents/${activeDocId}/content?token=${encodeURIComponent(token)}`;
     } else if (sessionEmail) {
       url = `${baseUrl}/binders/${binderId}/documents/${activeDocId}/content`;
-      const stored = typeof window !== "undefined" ? localStorage.getItem("usign.authToken") : null;
-      if (stored) headers.Authorization = `Bearer ${stored}`;
     } else {
       return undefined;
     }
 
-    void fetch(url, { headers, credentials: "include" })
+    void fetch(url, { credentials: "include" })
       .then(async (response) => {
         if (!response.ok) return null;
         const blob = await response.blob();

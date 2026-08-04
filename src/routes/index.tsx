@@ -5,7 +5,7 @@ import { FilePlus2, UserPlus, Settings } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { OnboardingChecklist } from "@/components/OnboardingChecklist";
 import { useBinders } from "@/lib/store";
-import type { BinderStatus } from "@/lib/mockData";
+import type { BinderStatus } from "@/lib/types";
 
 const NewBinderDialog = lazy(() =>
   import("@/components/NewBinderDialog").then((m) => ({ default: m.NewBinderDialog })),

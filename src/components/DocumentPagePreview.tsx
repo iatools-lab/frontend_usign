@@ -24,8 +24,8 @@ function loadPdfjs(): Promise<PdfjsModule> {
 }
 
 /**
- * Mock paper preview for a document page. We render a simple A4-ratio card
- * with faux text lines, so users can place signature zones on it.
+ * Document page preview. When no PDF bytes are available yet, we render a
+ * neutral A4 skeleton so users can still place signature zones.
  */
 export function DocumentPagePreview({
   documentName,
@@ -134,7 +134,7 @@ export function DocumentPagePreview({
     };
   }, [documentFile, hasPdfSource, page]);
 
-  // Generate deterministic faux content based on doc name + page
+  // Generate deterministic placeholder lines based on doc name + page.
   const seed = `${documentName}-${page}`.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
   const lines = Array.from({ length: 18 }, (_, i) => {
     const w = 40 + ((seed + i * 7) % 55);

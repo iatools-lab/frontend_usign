@@ -1,5 +1,15 @@
-const AUTH_TOKEN_KEY = "usign.authToken";
+const LEGACY_AUTH_TOKEN_KEY = "usign.authToken";
 const SESSION_CACHE_KEY = "usign.session";
+
+export function clearLegacyAuthToken() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  localStorage.removeItem(LEGACY_AUTH_TOKEN_KEY);
+}
+
+clearLegacyAuthToken();
 
 export class ApiError extends Error {
   constructor(
@@ -43,33 +53,12 @@ export function getApiBaseUrl() {
   );
 }
 
-export function getStoredAuthToken() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  return localStorage.getItem(AUTH_TOKEN_KEY);
-}
-
 export function hasStoredAuthToken() {
   if (typeof window === "undefined") {
     return false;
   }
 
-  return Boolean(getStoredAuthToken() || localStorage.getItem(SESSION_CACHE_KEY));
-}
-
-export function setStoredAuthToken(token: string | null) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (token) {
-    localStorage.setItem(AUTH_TOKEN_KEY, token);
-    return;
-  }
-
-  localStorage.removeItem(AUTH_TOKEN_KEY);
+  return Boolean(localStorage.getItem(SESSION_CACHE_KEY));
 }
 
 export function notifyStoreChange(detail: string) {
@@ -108,12 +97,7 @@ export async function apiFetch<T>(
     headers.set("Content-Type", "application/json");
   }
 
-  if (!skipAuth) {
-    const token = getStoredAuthToken();
-    if (token) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
-  }
+  void skipAuth;
 
   const response = await fetch(joinUrl(getApiBaseUrl(), path), {
     ...fetchOptions,

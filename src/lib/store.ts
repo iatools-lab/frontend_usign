@@ -11,7 +11,7 @@ import type {
   BinderStatus,
   Contact,
   SignatureField,
-} from "./mockData";
+} from "./types";
 
 /**
  * Gardés uniquement pour la compatibilité avec la déconnexion

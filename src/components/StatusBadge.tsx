@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
-import type { BinderStatus } from "@/lib/mockData";
+import type { BinderStatus } from "@/lib/types";
 
 const STATUS_LABEL: Record<BinderStatus, string> = {
   draft: "status.draft",

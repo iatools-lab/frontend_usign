@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { getApiBaseUrl, getErrorMessage, getStoredAuthToken } from "@/lib/api";
+import { getApiBaseUrl, getErrorMessage } from "@/lib/api";
 import { isAllowedSignerEmail } from "@/lib/email";
 import { useBinderActions, useContacts } from "@/lib/store";
 import { getSession } from "@/lib/auth";
@@ -31,7 +31,7 @@ import {
   type SignatureField,
   type SignatureFieldKind,
   SIGNER_COLORS,
-} from "@/lib/mockData";
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { DocumentPagePreview } from "./DocumentPagePreview";
 
@@ -222,16 +222,9 @@ export function NewBinderDialog({
 
     const loadDocumentFile = async () => {
       try {
-        const headers = new Headers();
-        const token = getStoredAuthToken();
-        if (token) {
-          headers.set("Authorization", `Bearer ${token}`);
-        }
-
         const response = await fetch(
           `${getApiBaseUrl()}/binders/${draftBinder.id}/documents/${activeDocId}/content`,
           {
-            headers,
             credentials: "include",
           },
         );

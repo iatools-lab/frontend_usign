@@ -10,7 +10,7 @@ import { useBinderActions, useBinders, useCcBinders } from "@/lib/store";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format";
-import type { Binder, BinderStatus } from "@/lib/mockData";
+import type { Binder, BinderStatus } from "@/lib/types";
 
 type StatusFilter = BinderStatus | "all";
 const TABS: StatusFilter[] = ["all", "draft", "started", "finished", "stopped", "archived"];

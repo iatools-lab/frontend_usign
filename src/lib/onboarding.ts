@@ -1,4 +1,4 @@
-// Tracks first-login onboarding progress per user (demo only, localStorage).
+// Tracks first-login onboarding display preferences per user.
 
 const KEY_PREFIX = "usign.onboarding:";
 const DISMISS_PREFIX = "usign.onboardingDismissed:";

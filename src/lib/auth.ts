@@ -1,4 +1,4 @@
-import { apiFetch, isApiError, setStoredAuthToken } from "./api";
+import { apiFetch, clearLegacyAuthToken, isApiError } from "./api";
 
 const SESSION_KEY = "usign.session";
 const BINDERS_CACHE_KEY = "usign.binders.cache";
@@ -96,7 +96,7 @@ function clearAuthState() {
   if (typeof window !== "undefined") {
     localStorage.removeItem(SESSION_KEY);
   }
-  setStoredAuthToken(null);
+  clearLegacyAuthToken();
   clearCachedCollections();
   dispatchAuthChange();
 }

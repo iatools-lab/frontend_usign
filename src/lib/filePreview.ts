@@ -1,5 +1,3 @@
-import { getStoredAuthToken } from "./api";
-
 type OpenFetchedFileOptions = {
   authenticated?: boolean;
   preferDirect?: boolean;
@@ -20,12 +18,7 @@ export async function openFetchedFile(
 
   const headers = new Headers();
 
-  if (options.authenticated) {
-    const token = getStoredAuthToken();
-    if (token) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
-  }
+  void options.authenticated;
 
   const response = await fetch(url, {
     headers,

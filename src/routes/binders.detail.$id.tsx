@@ -34,7 +34,7 @@ import { AppShell } from "@/components/AppShell";
 import { DocumentPagePreview } from "@/components/DocumentPagePreview";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useBinderActions, useBinderDetail } from "@/lib/store";
-import { getApiBaseUrl, getErrorMessage, getStoredAuthToken } from "@/lib/api";
+import { getApiBaseUrl, getErrorMessage } from "@/lib/api";
 import { isAllowedSignerEmail } from "@/lib/email";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -53,7 +53,7 @@ import {
   type BinderSigner,
   type SignatureField,
   type SignatureFieldKind,
-} from "@/lib/mockData";
+} from "@/lib/types";
 
 export const Route = createFileRoute("/binders/detail/$id")({
   head: () => ({ meta: [{ title: "Détail parapheur — Usign" }] }),
@@ -197,16 +197,9 @@ function BinderDetail() {
 
     const loadDocumentFile = async () => {
       try {
-        const headers = new Headers();
-        const token = getStoredAuthToken();
-        if (token) {
-          headers.set("Authorization", `Bearer ${token}`);
-        }
-
         const response = await fetch(
           `${getApiBaseUrl()}/binders/${binder.id}/documents/${placementDocId}/content`,
           {
-            headers,
             credentials: "include",
           },
         );

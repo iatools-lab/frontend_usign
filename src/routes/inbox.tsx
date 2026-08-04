@@ -8,7 +8,7 @@ import { useBinderActions, useInboxBinders } from "@/lib/store";
 import { getSession } from "@/lib/auth";
 import { useMySignature } from "@/lib/mySignature";
 import { formatDateTime } from "@/lib/format";
-import { getInitialsFromName, type Binder, type BinderSigner } from "@/lib/mockData";
+import { getInitialsFromName, type Binder, type BinderSigner } from "@/lib/types";
 
 export const Route = createFileRoute("/inbox")({
   head: () => ({
