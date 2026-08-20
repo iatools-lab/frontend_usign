@@ -81,6 +81,10 @@ async function fileToBase64(file: File): Promise<string> {
   return btoa(binary);
 }
 
+function getContactFullName(contact: { firstName: string; lastName: string }) {
+  return `${contact.firstName} ${contact.lastName}`.trim();
+}
+
 export function NewBinderDialog({
   open,
   onOpenChange,
@@ -101,14 +105,13 @@ export function NewBinderDialog({
   const [step, setStep] = useState<StepKey>("general");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [group, setGroup] = useState("");
-  const [consolidation, setConsolidation] = useState(false);
   const [documents, setDocuments] = useState<LocalBinderDocument[]>([]);
   const [attachments, setAttachments] = useState<LocalBinderAttachment[]>([]);
   const [signers, setSigners] = useState<BinderSigner[]>([]);
   const [ccRecipients, setCcRecipients] = useState<{ id: string; name: string; email: string }[]>(
     [],
   );
+  const [focusedCcId, setFocusedCcId] = useState<string | null>(null);
   const [fields, setFields] = useState<SignatureField[]>([]);
   const [notif, setNotif] = useState<BinderNotifications>({
     onStart: true,
@@ -142,7 +145,6 @@ export function NewBinderDialog({
     return Boolean(
       name.trim() ||
       description.trim() ||
-      group.trim() ||
       documents.length ||
       attachments.length ||
       signers.some((signer) => signer.name.trim() || signer.email.trim()) ||
@@ -152,7 +154,6 @@ export function NewBinderDialog({
   }, [
     name,
     description,
-    group,
     documents.length,
     attachments.length,
     signers,
@@ -164,11 +165,11 @@ export function NewBinderDialog({
     setStep("general");
     setName("");
     setDescription("");
-    setGroup("");
-    setConsolidation(false);
     setDocuments([]);
     setAttachments([]);
     setSigners([]);
+    setCcRecipients([]);
+    setFocusedCcId(null);
     setFields([]);
     setNotif({ onStart: true, onComplete: true, reminders: false, reminderEveryHours: 24 });
     setActiveSignerId(null);
@@ -190,11 +191,16 @@ export function NewBinderDialog({
     setStep("general");
     setName(draftBinder.name);
     setDescription(draftBinder.description ?? "");
-    setGroup(draftBinder.group ?? "");
-    setConsolidation(draftBinder.consolidation);
     setDocuments((draftBinder.documents ?? []).map((document) => ({ ...document })));
     setAttachments(draftBinder.attachments ?? []);
     setSigners(draftBinder.signers ?? []);
+    setCcRecipients(
+      (draftBinder.ccRecipients ?? []).map((cc) => ({
+        id: cc.id,
+        name: cc.name ?? "",
+        email: cc.email,
+      })),
+    );
     setFields(draftBinder.signatureFields ?? []);
     setNotif({
       onStart: draftBinder.notifications?.onStart ?? true,
@@ -303,7 +309,7 @@ export function NewBinderDialog({
     return {
       name: name.trim(),
       description: description.trim() || undefined,
-      group,
+      group: undefined,
       status: saveAsDraft ? ("draft" as const) : ("started" as const),
       documents: documentPayloads,
       attachments: attachmentPayloads,
@@ -316,7 +322,7 @@ export function NewBinderDialog({
         .filter((c) => (saveAsDraft ? Boolean(c.email) : true)),
       signatureFields: normalizedFields,
       notifications: notif,
-      consolidation,
+      consolidation: false,
     };
   };
 
@@ -631,20 +637,6 @@ export function NewBinderDialog({
                   rows={3}
                 />
               </Field>
-              <Field label={t("newBinder.group")}>
-                <Input
-                  value={group}
-                  onChange={(e) => setGroup(e.target.value)}
-                  placeholder="Utilisateurs Principaux"
-                />
-              </Field>
-              <label className="flex cursor-pointer items-center gap-2 pt-1 text-sm text-foreground">
-                <Checkbox
-                  checked={consolidation}
-                  onCheckedChange={(v) => setConsolidation(Boolean(v))}
-                />
-                {t("newBinder.consolidationLabel")}
-              </label>
             </div>
           )}
 
@@ -728,11 +720,6 @@ export function NewBinderDialog({
               )}
               {signers.map((s, idx) => {
                 const color = s.color ?? SIGNER_COLORS[idx % SIGNER_COLORS.length];
-                const contactMatch = contacts.find(
-                  (contact) =>
-                    `${contact.firstName} ${contact.lastName}`.trim() === s.name &&
-                    contact.email === s.email,
-                );
                 return (
                   <div key={s.id} className="space-y-2 rounded-md border bg-card p-3">
                     <div className="flex items-center gap-2">
@@ -783,9 +770,7 @@ export function NewBinderDialog({
                             (() => {
                               const q = s.name.trim().toLowerCase();
                               const matches = contacts
-                                .filter((c) =>
-                                  `${c.firstName} ${c.lastName}`.toLowerCase().includes(q),
-                                )
+                                .filter((c) => getContactFullName(c).toLowerCase().includes(q))
                                 .slice(0, 8);
                               if (matches.length === 0) return null;
                               return (
@@ -801,7 +786,7 @@ export function NewBinderDialog({
                                               x.id === s.id
                                                 ? {
                                                     ...x,
-                                                    name: `${contact.firstName} ${contact.lastName}`,
+                                                    name: getContactFullName(contact),
                                                     email: contact.email,
                                                   }
                                                 : x,
@@ -810,7 +795,7 @@ export function NewBinderDialog({
                                         }
                                         className="w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
                                       >
-                                        {contact.firstName} {contact.lastName} · {contact.email}
+                                        {getContactFullName(contact)} · {contact.email}
                                       </button>
                                     </li>
                                   ))}
@@ -859,17 +844,75 @@ export function NewBinderDialog({
               <p className="text-sm text-muted-foreground">{t("newBinder.ccHelp")}</p>
               <div className="space-y-2">
                 {ccRecipients.map((c) => (
-                  <div key={c.id} className="flex items-center gap-2">
+                  <div key={c.id} className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
+                    <div className="relative">
+                      <Input
+                        placeholder={t("newBinder.ccName")}
+                        value={c.name}
+                        onFocus={() => setFocusedCcId(c.id)}
+                        onBlur={() =>
+                          setTimeout(
+                            () => setFocusedCcId((current) => (current === c.id ? null : current)),
+                            150,
+                          )
+                        }
+                        onChange={(e) =>
+                          setCcRecipients((prev) =>
+                            prev.map((x) => (x.id === c.id ? { ...x, name: e.target.value } : x)),
+                          )
+                        }
+                      />
+                      {focusedCcId === c.id &&
+                        c.name.trim() &&
+                        (() => {
+                          const query = c.name.trim().toLowerCase();
+                          const matches = contacts
+                            .filter((contact) => {
+                              const fullName = getContactFullName(contact).toLowerCase();
+                              return (
+                                fullName.includes(query) ||
+                                contact.email.toLowerCase().includes(query)
+                              );
+                            })
+                            .slice(0, 8);
+
+                          if (matches.length === 0) {
+                            return null;
+                          }
+
+                          return (
+                            <ul className="absolute z-30 mt-1 max-h-44 w-full overflow-auto rounded border bg-card p-1 shadow">
+                              {matches.map((contact) => (
+                                <li key={contact.id}>
+                                  <button
+                                    type="button"
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onClick={() => {
+                                      setCcRecipients((prev) =>
+                                        prev.map((x) =>
+                                          x.id === c.id
+                                            ? {
+                                                ...x,
+                                                name: getContactFullName(contact),
+                                                email: contact.email,
+                                              }
+                                            : x,
+                                        ),
+                                      );
+                                      setFocusedCcId(null);
+                                    }}
+                                    className="w-full rounded px-2 py-1 text-left text-sm hover:bg-accent"
+                                  >
+                                    {getContactFullName(contact)} · {contact.email}
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          );
+                        })()}
+                    </div>
                     <Input
-                      placeholder={t("newBinder.ccName")}
-                      value={c.name}
-                      onChange={(e) =>
-                        setCcRecipients((prev) =>
-                          prev.map((x) => (x.id === c.id ? { ...x, name: e.target.value } : x)),
-                        )
-                      }
-                    />
-                    <Input
+                      type="email"
                       placeholder={t("newBinder.ccEmail")}
                       value={c.email}
                       onChange={(e) =>
@@ -881,7 +924,7 @@ export function NewBinderDialog({
                     <button
                       type="button"
                       onClick={() => setCcRecipients((p) => p.filter((x) => x.id !== c.id))}
-                      className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      className="rounded p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -1116,7 +1159,6 @@ export function NewBinderDialog({
               <p className="text-muted-foreground">{t("newBinder.reviewIntro")}</p>
               <ReviewRow label={t("newBinder.name")} value={name || "—"} />
               <ReviewRow label={t("newBinder.description")} value={description || "—"} />
-              <ReviewRow label={t("newBinder.group")} value={group || "Utilisateurs Principaux"} />
               <ReviewRow
                 label={t("newBinder.steps.documents")}
                 value={

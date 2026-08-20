@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FileText } from "lucide-react";
+import { FileText, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // pdfjs-dist relies on browser-only globals like DOMMatrix, so it must only
@@ -50,6 +50,7 @@ export function DocumentPagePreview({
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const onTotalPagesChangeRef = useRef(onTotalPagesChange);
   const [isPdfRendered, setIsPdfRendered] = useState(false);
+  const [zoom, setZoom] = useState(1);
   const hasPdfSource = Boolean(documentFile && documentFile.name.toLowerCase().endsWith(".pdf"));
 
   useEffect(() => {
@@ -132,7 +133,7 @@ export function DocumentPagePreview({
     return () => {
       isCancelled = true;
     };
-  }, [documentFile, hasPdfSource, page]);
+  }, [documentFile, hasPdfSource, page, zoom]);
 
   // Generate deterministic placeholder lines based on doc name + page.
   const seed = `${documentName}-${page}`.split("").reduce((a, c) => a + c.charCodeAt(0), 0);
@@ -143,59 +144,99 @@ export function DocumentPagePreview({
 
   return (
     <div className={cn("flex flex-col items-center", className)}>
-      <div
-        ref={surfaceRef}
-        onClick={onClick}
-        data-page-surface
-        className={cn(
-          "relative w-full overflow-hidden rounded border bg-white shadow-sm",
-          onClick && "cursor-crosshair",
-        )}
-      >
-        {hasPdfSource ? (
-          <>
-            <canvas ref={canvasRef} className={cn("block w-full", !isPdfRendered && "hidden")} />
-            {!isPdfRendered && (
-              <div className="aspect-[1/1.414] w-full animate-pulse bg-slate-100" />
-            )}
-            {isPdfRendered && (
-              <>
-                <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-[10px] font-medium text-slate-600 shadow-sm">
-                  {documentName}
+      <div className="mb-2 flex w-full items-center justify-end gap-1">
+        <button
+          type="button"
+          onClick={() => setZoom((current) => Math.max(0.75, current - 0.25))}
+          className="rounded border bg-white p-1.5 text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-40"
+          disabled={zoom <= 0.75}
+          aria-label="Zoom arrière"
+        >
+          <ZoomOut className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setZoom(1)}
+          className="min-w-14 rounded border bg-white px-2 py-1.5 text-xs font-medium text-slate-600 shadow-sm hover:bg-slate-50"
+          aria-label="Réinitialiser le zoom"
+          title="Réinitialiser le zoom"
+        >
+          {Math.round(zoom * 100)}%
+        </button>
+        <button
+          type="button"
+          onClick={() => setZoom(1)}
+          className="rounded border bg-white p-1.5 text-slate-600 shadow-sm hover:bg-slate-50"
+          aria-label="Réinitialiser le zoom"
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setZoom((current) => Math.min(2.5, current + 0.25))}
+          className="rounded border bg-white p-1.5 text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-40"
+          disabled={zoom >= 2.5}
+          aria-label="Zoom avant"
+        >
+          <ZoomIn className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div className="w-full overflow-auto rounded bg-slate-100/60 p-2">
+        <div
+          ref={surfaceRef}
+          onClick={onClick}
+          data-page-surface
+          className={cn(
+            "relative overflow-hidden rounded border bg-white shadow-sm transition-[width]",
+            onClick && "cursor-crosshair",
+          )}
+          style={{ width: `${zoom * 100}%`, marginInline: zoom < 1 ? "auto" : undefined }}
+        >
+          {hasPdfSource ? (
+            <>
+              <canvas ref={canvasRef} className={cn("block w-full", !isPdfRendered && "hidden")} />
+              {!isPdfRendered && (
+                <div className="aspect-[1/1.414] w-full animate-pulse bg-slate-100" />
+              )}
+              {isPdfRendered && (
+                <>
+                  <div className="pointer-events-none absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-[10px] font-medium text-slate-600 shadow-sm">
+                    {documentName}
+                  </div>
+                  <div className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-white/90 px-2 py-1 text-[10px] font-medium text-slate-600 shadow-sm">
+                    Page {page} / {totalPages}
+                  </div>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="aspect-[1/1.414] w-full">
+                <div className="absolute inset-x-0 top-0 flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-[10px] text-slate-500">
+                  <FileText className="h-3 w-3" />
+                  <span className="truncate">{documentName}</span>
                 </div>
-                <div className="pointer-events-none absolute bottom-3 right-3 rounded-full bg-white/90 px-2 py-1 text-[10px] font-medium text-slate-600 shadow-sm">
+                <div className="absolute inset-x-6 top-12 space-y-2">
+                  <div className="h-3 w-1/2 rounded bg-slate-300" />
+                  <div className="h-2 w-1/3 rounded bg-slate-200" />
+                </div>
+                <div className="absolute inset-x-6 top-24 space-y-1.5">
+                  {lines.map((w, i) => (
+                    <div
+                      key={i}
+                      className="h-1.5 rounded-sm bg-slate-200"
+                      style={{ width: `${w}%` }}
+                    />
+                  ))}
+                </div>
+                <div className="absolute inset-x-0 bottom-0 border-t border-slate-200 bg-slate-50 px-4 py-1.5 text-center text-[9px] text-slate-400">
                   Page {page} / {totalPages}
                 </div>
-              </>
-            )}
-          </>
-        ) : (
-          <>
-            <div className="aspect-[1/1.414] w-full">
-              <div className="absolute inset-x-0 top-0 flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-[10px] text-slate-500">
-                <FileText className="h-3 w-3" />
-                <span className="truncate">{documentName}</span>
               </div>
-              <div className="absolute inset-x-6 top-12 space-y-2">
-                <div className="h-3 w-1/2 rounded bg-slate-300" />
-                <div className="h-2 w-1/3 rounded bg-slate-200" />
-              </div>
-              <div className="absolute inset-x-6 top-24 space-y-1.5">
-                {lines.map((w, i) => (
-                  <div
-                    key={i}
-                    className="h-1.5 rounded-sm bg-slate-200"
-                    style={{ width: `${w}%` }}
-                  />
-                ))}
-              </div>
-              <div className="absolute inset-x-0 bottom-0 border-t border-slate-200 bg-slate-50 px-4 py-1.5 text-center text-[9px] text-slate-400">
-                Page {page} / {totalPages}
-              </div>
-            </div>
-          </>
-        )}
-        {children}
+            </>
+          )}
+          {children}
+        </div>
       </div>
     </div>
   );
