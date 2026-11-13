@@ -4,7 +4,8 @@ import { useTranslation } from "react-i18next";
 import { FilePlus2, UserPlus, Settings } from "lucide-react";
 import { AppShell } from "@/components/AppShell";
 import { OnboardingChecklist } from "@/components/OnboardingChecklist";
-import { useBinders } from "@/lib/store";
+import { useBinderStats } from "@/lib/store";
+import { getErrorMessage } from "@/lib/api";
 import type { BinderStatus } from "@/lib/types";
 
 const NewBinderDialog = lazy(() =>
@@ -29,17 +30,9 @@ const STATUSES: BinderStatus[] = ["draft", "started", "finished", "stopped", "ar
 function HomePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { binders } = useBinders();
+  const { counts, error } = useBinderStats();
   const [newBinderOpen, setNewBinderOpen] = useState(false);
   const [newContactOpen, setNewContactOpen] = useState(false);
-
-  const counts = STATUSES.reduce<Record<BinderStatus, number>>(
-    (acc, s) => {
-      acc[s] = binders.filter((b) => b.status === s).length;
-      return acc;
-    },
-    { draft: 0, started: 0, finished: 0, stopped: 0, archived: 0 },
-  );
 
   return (
     <AppShell>
@@ -79,6 +72,11 @@ function HomePage() {
           <h2 className="mb-5 border-b pb-2 text-2xl font-semibold text-foreground">
             {t("home.binders")}
           </h2>
+          {error != null && (
+            <p role="alert" className="mb-4 text-sm text-destructive">
+              {getErrorMessage(error)}
+            </p>
+          )}
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5">
             {STATUSES.map((s) => (
               <Link
@@ -94,7 +92,7 @@ function HomePage() {
                   {t(`status.${s}`)}
                 </div>
                 <div className="relative flex h-32 items-center justify-center bg-muted/40">
-                  <span className="text-5xl font-light text-foreground/80">{counts[s]}</span>
+                  <span className="text-5xl font-light text-foreground/80">{counts?.[s] ?? "—"}</span>
                 </div>
               </Link>
             ))}

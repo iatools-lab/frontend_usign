@@ -540,6 +540,42 @@ export function useBinderActions() {
   };
 }
 
+export function useBinderStats() {
+  const [counts, setCounts] = useState<Record<BinderStatus, number> | null>(null);
+  const [error, setError] = useState<unknown>(null);
+
+  useEffect(() => {
+    let active = true;
+    let version = 0;
+    const sync = async () => {
+      const requestVersion = ++version;
+      setCounts(null);
+      setError(null);
+      if (!hasStoredAuthToken()) return;
+      try {
+        const next = await apiFetch<Record<BinderStatus, number>>("/binders/stats");
+        if (active && requestVersion === version) setCounts(next);
+      } catch (failure) {
+        if (active && requestVersion === version) setError(failure);
+      }
+    };
+    const onStoreChange = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === BINDER_EVENT) void sync();
+    };
+    const onAuthChange = () => void sync();
+    void sync();
+    window.addEventListener("goodflag:store", onStoreChange);
+    window.addEventListener("goodflag:auth", onAuthChange);
+    return () => {
+      active = false;
+      window.removeEventListener("goodflag:store", onStoreChange);
+      window.removeEventListener("goodflag:auth", onAuthChange);
+    };
+  }, []);
+
+  return { counts, error };
+}
+
 export function useBinders() {
   const [binders, setBinders] = useState<Binder[]>([]);
 
