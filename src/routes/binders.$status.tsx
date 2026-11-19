@@ -116,7 +116,8 @@ function BindersByStatus() {
               className="pl-9"
             />
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <PeriodFilter value={period} onChange={setPeriod} />
             <Button variant="outline" size="sm" className="gap-1.5">
               <ArrowDownUp className="h-4 w-4" /> {t("common.sort")}
             </Button>
@@ -130,7 +131,6 @@ function BindersByStatus() {
           </div>
         </div>
 
-        <PeriodFilter value={period} onChange={setPeriod} />
         {loadError != null && (
           <p role="alert" className="text-sm text-destructive">
             {getErrorMessage(loadError)}

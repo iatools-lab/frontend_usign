@@ -80,9 +80,9 @@ function DocumentsPage() {
               className="pl-9"
             />
           </div>
+          <PeriodFilter value={period} onChange={setPeriod} />
         </div>
 
-        <PeriodFilter value={period} onChange={setPeriod} />
         {error != null && (
           <p role="alert" className="text-sm text-destructive">
             {getErrorMessage(error)}
