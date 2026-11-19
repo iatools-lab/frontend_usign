@@ -9,7 +9,8 @@ import { formatDateTime } from "@/lib/format";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { openFetchedFile } from "@/lib/filePreview";
-import { useDocumentRecords } from "@/lib/store";
+import { PeriodFilter } from "@/components/PeriodFilter";
+import { EMPTY_PERIOD, usePeriodRecords } from "@/lib/period";
 import type { DocumentRecord } from "@/lib/store";
 
 export const Route = createFileRoute("/documents")({
@@ -19,7 +20,12 @@ export const Route = createFileRoute("/documents")({
 
 function DocumentsPage() {
   const { t, i18n } = useTranslation();
-  const { documents: records, isLoading } = useDocumentRecords();
+  const [period, setPeriod] = useState(EMPTY_PERIOD);
+  const {
+    items: records,
+    isLoading,
+    error,
+  } = usePeriodRecords<DocumentRecord>("/documents", period);
   const [query, setQuery] = useState("");
   const [openingKey, setOpeningKey] = useState<string | null>(null);
 
@@ -54,16 +60,6 @@ function DocumentsPage() {
     }
   };
 
-  if (isLoading && records.length === 0) {
-    return (
-      <AppShell>
-        <div className="rounded-lg border bg-card p-10 text-center text-sm text-muted-foreground">
-          Chargement…
-        </div>
-      </AppShell>
-    );
-  }
-
   return (
     <AppShell>
       <div className="space-y-4">
@@ -86,6 +82,18 @@ function DocumentsPage() {
           </div>
         </div>
 
+        <PeriodFilter value={period} onChange={setPeriod} />
+        {error != null && (
+          <p role="alert" className="text-sm text-destructive">
+            {getErrorMessage(error)}
+          </p>
+        )}
+        {isLoading && (
+          <p role="status" className="text-sm text-muted-foreground">
+            {i18n.language.startsWith("fr") ? "Chargement?" : "Loading?"}
+          </p>
+        )}
+
         <div className="overflow-hidden rounded-lg border bg-card">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[720px] text-sm">
@@ -103,7 +111,7 @@ function DocumentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {documents.length === 0 && (
+                {!isLoading && error == null && documents.length === 0 && (
                   <tr>
                     <td colSpan={5} className="px-4 py-12 text-center text-muted-foreground">
                       {t("documents.empty")}

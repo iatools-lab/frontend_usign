@@ -1,12 +1,15 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Search, Plus, Trash2, ExternalLink, ListFilter, ArrowDownUp } from "lucide-react";
+import { Search, Plus, Trash2, ExternalLink, ArrowDownUp } from "lucide-react";
 import { z } from "zod";
 import { AppShell } from "@/components/AppShell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { NewBinderDialog } from "@/components/NewBinderDialog";
-import { useBinderActions, useBinders, useCcBinders } from "@/lib/store";
+import { useBinderActions } from "@/lib/store";
+import { PeriodFilter } from "@/components/PeriodFilter";
+import { EMPTY_PERIOD, usePeriodRecords } from "@/lib/period";
+import { getErrorMessage } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/format";
@@ -31,8 +34,13 @@ function BindersByStatus() {
   const { status } = Route.useParams();
   const { draftId } = Route.useSearch();
   const { t, i18n } = useTranslation();
-  const { binders: ownedBinders } = useBinders();
-  const { binders: ccBinders } = useCcBinders();
+  const [period, setPeriod] = useState(EMPTY_PERIOD);
+  const owned = usePeriodRecords<Binder>("/binders", period);
+  const cc = usePeriodRecords<Binder>("/binders/cc", period);
+  const ownedBinders = owned.items;
+  const ccBinders = cc.items;
+  const isLoading = owned.isLoading || cc.isLoading;
+  const loadError = owned.error ?? cc.error;
   const { remove } = useBinderActions();
 
   const binders = useMemo(() => {
@@ -110,9 +118,6 @@ function BindersByStatus() {
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" className="gap-1.5">
-              <ListFilter className="h-4 w-4" /> {t("common.filter")}
-            </Button>
-            <Button variant="outline" size="sm" className="gap-1.5">
               <ArrowDownUp className="h-4 w-4" /> {t("common.sort")}
             </Button>
             <button
@@ -124,6 +129,18 @@ function BindersByStatus() {
             </button>
           </div>
         </div>
+
+        <PeriodFilter value={period} onChange={setPeriod} />
+        {loadError != null && (
+          <p role="alert" className="text-sm text-destructive">
+            {getErrorMessage(loadError)}
+          </p>
+        )}
+        {isLoading && (
+          <p role="status" className="text-sm text-muted-foreground">
+            {i18n.language.startsWith("fr") ? "Chargement?" : "Loading?"}
+          </p>
+        )}
 
         <div className="flex flex-wrap gap-2">
           {TABS.map((s) => {
@@ -177,7 +194,7 @@ function BindersByStatus() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 && (
+                {!isLoading && loadError == null && filtered.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
                       {t("binders.empty")}
